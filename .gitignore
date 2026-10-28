@@ -60,3 +60,5 @@ desktop.ini
 # Local runtime data files (preserve directory via .gitkeep)
 data/*.json
 !data/.gitkeep
+
+ADA-08_AgentReady_Repository.pdf
