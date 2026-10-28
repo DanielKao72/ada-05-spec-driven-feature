@@ -1,6 +1,8 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 
 from app.core.config import settings
+from app.core.exceptions import CustomerStorageError
 from app.routers.customer_router import router as customer_router
 
 
@@ -13,6 +15,14 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(customer_router)
+
+    @app.exception_handler(CustomerStorageError)
+    def storage_error_handler(request: Request, exc: CustomerStorageError) -> JSONResponse:
+        # Details are logged by the repository; do not expose them to clients.
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error while accessing customer storage."},
+        )
 
     @app.get("/health", tags=["Health"])
     def health_check() -> dict[str, str]:

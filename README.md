@@ -214,6 +214,15 @@ Performs a case-insensitive substring search across customer names and emails.
   }
   ```
 
+#### Storage Error (Corrupted JSON file):
+If `data/customers.json` contains invalid JSON, every customer endpoint (`/search`, `POST /customers`, `GET /customers`) fails without modifying the file. The server logs an error-level entry naming the file path and the decoding error.
+- **Response (HTTP 500 Internal Server Error):**
+  ```json
+  {
+    "detail": "Internal server error while accessing customer storage."
+  }
+  ```
+
 ---
 
 ### 4. List All Customers
