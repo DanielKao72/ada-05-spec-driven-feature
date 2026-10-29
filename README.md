@@ -218,6 +218,18 @@ Performs a case-insensitive substring search across customer names and emails.
 
 ---
 
+### Storage Errors (all customer endpoints)
+If the JSON storage file contains invalid JSON, `GET /api/v1/customers`, `GET /api/v1/customers/search` and `POST /api/v1/customers` respond with HTTP 500, log the file path and decoding error server-side, and leave the file untouched.
+
+- **Response (HTTP 500 Internal Server Error):**
+  ```json
+  {
+    "detail": "Internal server error."
+  }
+  ```
+
+---
+
 ### 4. List All Customers
 Retrieves all customer records currently persisted in the JSON store.
 

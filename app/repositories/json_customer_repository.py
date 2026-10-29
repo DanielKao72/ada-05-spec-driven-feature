@@ -1,8 +1,12 @@
 import json
+import logging
 from pathlib import Path
 from typing import List, Optional
 
+from app.core.exceptions import StorageCorruptedError
 from app.schemas.customer import Customer
+
+logger = logging.getLogger(__name__)
 
 
 class JsonCustomerRepository:
@@ -27,8 +31,13 @@ class JsonCustomerRepository:
                 if not content:
                     return []
                 return json.loads(content)
-        except (json.JSONDecodeError, FileNotFoundError):
+        except FileNotFoundError:
             return []
+        except json.JSONDecodeError as err:
+            logger.error(
+                "Failed to decode customer storage file '%s': %s", self.file_path, err
+            )
+            raise StorageCorruptedError(str(self.file_path)) from err
 
     def _write_raw_data(self, data: List[dict]) -> None:
         """Writes the raw list of dictionaries to the JSON file with clean formatting."""
