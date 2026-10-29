@@ -79,17 +79,19 @@ The interactive API documentation will be available at:
 
 ## Running the Test Suite
 
-Run the full automated test suite using `pytest`:
+Run the full verification contract (tests + repository checks). This is the same command CI runs:
 
 ```bash
-pytest -v
+bash scripts/verify_repo.sh
 ```
 
-To run with coverage or concise output:
+Run only the test suite:
 
 ```bash
-pytest
+python -m pytest -q
 ```
+
+See `AGENTS.md` for the standard commands and `docs/REPO_MAP.md` for where each component lives.
 
 ---
 
