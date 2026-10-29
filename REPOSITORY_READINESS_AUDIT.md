@@ -1,0 +1,40 @@
+# Repository Readiness Audit
+
+## BEFORE
+
+| Dimension | Score 0-5 | Weighted | Evidence | Main Gap |
+|---|---:|---:|---|---|
+| Entry Point & Navigation | 3 | 9/15 | `README.md` describe propósito, árbol de `app/` y `tests/`, comandos de instalación/ejecución/test y endpoints con ejemplos `curl`. | No existe `docs/REPO_MAP.md` ni guía de "dónde cambiar qué". `docs/tracebility.md` no está enlazado desde README ni AGENTS.md. |
+| Agent Instructions | 2 | 6/15 | `AGENTS.md` lista documentos a leer, reglas (no inventar requisitos, no debilitar tests, no agregar dependencias) y un *Definition of Done*. | No define fuentes de verdad de forma explícita, no tiene comandos estándar (solo "Run pytest"), no incluye mapa del repo, rutas protegidas ni stop conditions más allá de "requirements conflict". |
+| Build / Run / Test | 3 | 9/15 | README: `pip install -r requirements.txt`, `uvicorn app.main:app --reload --port 8000`, `pytest -v`. | No hay lint/formatter configurado, versión de Python no fijada (`3.10+`), dependencias sin pinear (`>=`) y warning de deprecación `httpx`/`starlette.testclient`. |
+| Architecture Boundaries | 3 | 6/10 | `ARCHITECTURE.md` documenta capas Router → Service → Repository, responsabilidades, interfaces y diagramas Mermaid; NFR-02 exige desacoplamiento. | No indica qué NO modificar (p. ej. `data/`, contratos de respuesta, `core/config.py`). Inconsistencia doc/código: "Error Handling" afirma que JSON corrupto produce HTTP 500 con logging, pero `_read_raw_data` atrapa `JSONDecodeError` y devuelve `[]`. Los boundaries no se verifican automáticamente. |
+| Requirements & Traceability | 3 | 6/10 | `SPEC.md` referencia los FR/NFR; `docs/tracebility.md` conecta requisito → AC → tarea → archivos → tests. | `TASKS.md` no referencia IDs FR/AC. La matriz está en español, con nombre incorrecto y no es descubrible; marca NFR-01 como "Implementado correctamente" pese al defecto CR-001 (fuente de verdad contradictoria). |
+| Automation & Guardrails | 1 | 2/10 | Solo `.gitignore` (excluye `.env`, `data/*.json`, cachés). | No hay `scripts/`, hooks activos (solo `*.sample` en `.git/hooks`), CI (`.github/workflows` inexistente), lint ni check de contrato del repo. Todas las reglas de AGENTS.md existen solo en lenguaje natural. |
+| Testability & Evidence | 3 | 9/15 | 6 archivos de tests (unit + integración) con `tmp_path` y override de dependencias en `conftest.py`; escenarios TS-01..TS-10 cubiertos; `results/agent-report.md` como evidencia previa. | README afirma "100% test coverage" sin herramienta de cobertura. No hay plantilla/ruta definida para registrar evidencia de una tarea (comandos, salida, resultado). |
+| Safety & Permissions | 1 | 2/10 | `.gitignore` excluye `.env` y datos runtime (`data/*.json`); no hay secretos versionados. | Sin rutas protegidas explícitas, sin reglas sobre acciones destructivas (borrar/sobrescribir `data/customers.json`, `git push --force`) o externas, sin secret scan. El propio bug CR-001 puede sobrescribir datos sin que ninguna regla lo detecte. |
+
+TOTAL BEFORE: 49 / 100
+
+## Top 3 friction points:
+
+1. **No existe un contrato de verificación ejecutable.** Sin `scripts/verify_repo.sh`, lint, hooks ni CI, el agente debe deducir que la validación es "solo `pytest`" leyendo el README; ninguna regla de `AGENTS.md` (no debilitar tests, no tocar archivos fuera de alcance, no agregar dependencias) se verifica de forma determinista.
+2. **`AGENTS.md` es incompleto como contrato operativo.** No declara fuentes de verdad, comandos estándar (install/run/test/verify), mapa del repositorio, rutas protegidas (`data/`, `.env`) ni stop conditions; tampoco hay `docs/REPO_MAP.md`, por lo que el agente debe explorar todo el árbol para ubicar el punto de cambio de CR-001 (`app/repositories/json_customer_repository.py`) y sus tests.
+3. **Fuentes de verdad inconsistentes y poco descubribles.** `SPEC.md` y `ARCHITECTURE.md` describen HTTP 500 + logging ante JSON corrupto, pero el código devuelve `[]`, y `docs/tracebility.md` (no enlazado, mal nombrado, en español) marca NFR-01 como implementado. El agente puede asumir que el comportamiento documentado ya existe o confiar en una matriz de trazabilidad desactualizada.
+
+## AFTER
+
+| Dimension | Score 0-5 | Weighted | Evidence | Improvement |
+|---|---:|---:|---|---|
+| Entry Point & Navigation | 4 | 12/15 | `AGENTS.md` define *Read First* y un mapa breve; `docs/REPO_MAP.md` lista entry points, qué cubre cada test, guía de cambios por tipo y rutas protegidas. `check_repo_contract.py` verifica que las rutas citadas en `AGENTS.md`, `CLAUDE.md` y `REPO_MAP.md` existan. En el AFTER el agente citó `REPO_MAP.md` y `AGENTS.md` y no infirió ningún comando. | I-01, I-02, I-03, I-05. Gap restante: el árbol de `README.md` no incluye `docs/`, `scripts/` ni `AGENTS.md`; `docs/tracebility.md` conserva el nombre con error. |
+| Agent Instructions | 5 | 15/15 | `AGENTS.md` contiene Read First, Sources of Truth, Repository Map, Standard Commands, Change Rules (documentación y git), Stop Conditions y Definition of Done; `CLAUDE.md` solo actúa como adaptador. Evidencia de uso: el agente AFTER aplicó la regla de documentación, no ejecutó `git stash` citando la regla y anotó cada prueba con su ID de AC, como pide el DoD. | I-01, I-02. |
+| Build / Run / Test | 4 | 12/15 | Comando único `bash scripts/verify_repo.sh` (tests + contrato) documentado en `AGENTS.md` y `README.md`; CI ejecuta el mismo script. El agente AFTER lo usó como validación final (`VERIFY_REPO: PASS`). | I-04, I-06. Gap restante: lint no configurado, dependencias sin pinear y warning de deprecación `httpx`/`starlette.testclient`. |
+| Architecture Boundaries | 4 | 8/10 | `docs/REPO_MAP.md` › *Layer Boundaries* define qué no hace cada capa; *Do Not Edit Directly* lista rutas protegidas. El agente AFTER mantuvo HTTP fuera del repositorio "as the layer rules require". La inconsistencia doc/código de CR-001 quedó resuelta. | I-03, I-05. Gap restante: los límites entre capas no se verifican automáticamente (sin import-linter). |
+| Requirements & Traceability | 4 | 8/10 | `AGENTS.md` declara una fuente de verdad por tipo de información. La regla de documentación exige actualizar `docs/tracebility.md`; el agente AFTER agregó la fila CR-001 con ACs, archivos y nombres de pruebas. Las pruebas citan `CR-001-AC-xx` en comentarios. | I-01, I-03. Gap restante: `TASKS.md` sigue sin referenciar IDs FR/AC y la matriz sigue en español. |
+| Automation & Guardrails | 4 | 8/10 | `scripts/check_repo_contract.py` hace 4 checks deterministas (archivos esenciales, rutas protegidas, secretos o `data/*.json` versionados, rutas citadas existentes). Prueba: una edición a `SPEC.md` produjo `Protected path modified: SPEC.md`. `.github/workflows/verify.yml` ejecuta el mismo contrato. | I-04, I-05, I-06. Gap restante: no hay hooks del agente ni pre-commit; en CI el check de rutas protegidas compara contra `HEAD` y no aporta. |
+| Testability & Evidence | 4 | 12/15 | El DoD es verificable (`VERIFY_REPO: PASS` y mapeo AC → test). AFTER: 36 pruebas pasan, 9 nuevas anotadas por AC. Con `git archive` se comprobó que fallan 7 de las 9 contra el código original. `results/before-agent-run.md` y `results/after-agent-run.md` tienen formato comparable. | I-01, I-04. Gap restante: el agente no pudo producir por sí mismo la evidencia de que las pruebas fallan sin el arreglo (la regla de git lo impide y no existe un script seguro para ello); README sigue afirmando "100% coverage" sin herramienta. |
+| Safety & Permissions | 4 | 8/10 | Rutas protegidas explícitas y verificadas, prohibición de comandos git que alteran estado, Stop Conditions para acciones destructivas, `data/` y dependencias nuevas. El check bloquea `.env`, llaves y `data/*.json` versionados. El agente AFTER no ejecutó ninguna operación git que alterara el estado. | I-01, I-03, I-05. Gap restante: sin escaneo de secretos por contenido; `ALLOW_PROTECTED_CHANGES=1` es una variable de entorno que cualquiera puede activar, no una aprobación auditada. |
+
+TOTAL AFTER: 83 / 100
+
+DELTA: AFTER - BEFORE = 83 - 49 = **+34 points**
+
