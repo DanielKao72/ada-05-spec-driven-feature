@@ -36,6 +36,7 @@ PROTECTED_PATHS = [
     "REQUIREMENTS.md",
     "SPEC.md",
     "TASK_UNDER_TEST.md",
+    "CHANGE_REQUEST.md",
     "REPOSITORY_READINESS_AUDIT.md",
     "results/",
     "scripts/",

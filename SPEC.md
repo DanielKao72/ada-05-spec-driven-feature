@@ -10,6 +10,7 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 - `FR-04`: No Matching Results Handling
 - `FR-05`: Customer Creation and Persistence
 - `FR-06`: List All Customers
+- `FR-09`: Customer List Pagination
 - `NFR-01`: Local JSON Persistence
 - `NFR-02`: Decoupled Architecture & Testability
 - `NFR-03`: Automated Testing & Code Quality
@@ -19,7 +20,7 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * **Input Normalization & Validation:** Trimming whitespace, case-insensitivity, and length validation ($2 \le \text{length} \le 100$).
 * **Customer Management Endpoints:**
   * `POST /api/v1/customers`: Register customer with unique UUID, RFC-compliant email, name, and UTC timestamp.
-  * `GET /api/v1/customers`: Retrieve all registered customer records.
+  * `GET /api/v1/customers`: Retrieve all registered customer records, or a window of them through the optional `limit` and `offset` query parameters.
 * **Local File Persistence:** Reading, writing, and automatically initializing the local JSON data store (`data/customers.json`).
 * **Automated Testing Suite:** End-to-end endpoint tests and unit tests using `pytest` and `httpx` (`TestClient`) with isolated temporary file fixtures (`tmp_path`).
 
@@ -29,6 +30,9 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * Customer modification (`PUT`/`PATCH`) and deletion (`DELETE`) operations.
 * User authentication, authorization, and rate limiting.
 * Fuzzy matching algorithms (e.g., Levenshtein distance, Soundex).
+* Sorting of customer records.
+* Pagination of search results (`GET /api/v1/customers/search`).
+* Total record counts in pagination responses, and any response format other than the JSON array.
 
 ## Domain Model
 
@@ -72,8 +76,14 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * `email`: Required, must be a valid email format conforming to standard email syntax.
 * Duplicate email check: Returns HTTP `409 Conflict` or `422 Unprocessable Entity` if the email already exists in storage.
 
+### 3. Customer List Pagination (`GET /api/v1/customers`)
+* `limit`: Optional integer, $1 \le \text{limit} \le 100$. No default value: when omitted, no upper bound is applied to the returned records.
+* `offset`: Optional integer, $\text{offset} \ge 0$. Defaults to `0`.
+* Records are returned in storage order.
+* If validation fails, response must be HTTP `422 Unprocessable Entity`.
+
 ## Error Handling
-* **HTTP 422 Unprocessable Entity:** Returned when request parameters or payload fail Pydantic schema validation (e.g., missing parameter `q`, search term shorter than 2 characters, invalid email format).
+* **HTTP 422 Unprocessable Entity:** Returned when request parameters or payload fail Pydantic schema validation (e.g., missing parameter `q`, search term shorter than 2 characters, invalid email format, out-of-range or non-integer `limit` or `offset`).
 * **HTTP 409 Conflict:** Returned when attempting to create a customer with an email that is already registered.
 * **HTTP 500 Internal Server Error:** Returned in the event of unexpected file I/O errors or corrupted JSON data, accompanied by descriptive server-side logging.
 
@@ -114,6 +124,36 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * **When** a client requests `GET /api/v1/customers`,
 * **Then** the API responds with HTTP 200 OK containing all stored customer records.
 
+### AC-13: Paginated Window
+* **Given** 5 stored customers,
+* **When** a client requests `GET /api/v1/customers?limit=2&offset=1`,
+* **Then** the API responds with HTTP 200 OK and a list containing only the 2nd and 3rd customers, in storage order.
+
+### AC-14: Listing Without Pagination Parameters
+* **Given** multiple stored customers,
+* **When** a client requests `GET /api/v1/customers` without `limit` or `offset`,
+* **Then** the API responds with HTTP 200 OK and a JSON array containing all stored customer records, as defined by AC-07.
+
+### AC-15: Single Pagination Parameter
+* **Given** 5 stored customers,
+* **When** a client requests `GET /api/v1/customers?limit=2`, or `GET /api/v1/customers?offset=3`,
+* **Then** the API responds with HTTP 200 OK and, respectively, the first 2 customers, or the 4th and 5th customers.
+
+### AC-16: Offset Beyond the Total
+* **Given** 5 stored customers,
+* **When** a client requests `GET /api/v1/customers?offset=5` or a greater `offset`,
+* **Then** the API responds with HTTP 200 OK and response body `[]`.
+
+### AC-17: Reject Pagination Parameter Violations
+* **Given** the customer listing endpoint,
+* **When** a client sends `limit` as `0`, `101`, `-1` or a non-integer value, or `offset` as `-1` or a non-integer value,
+* **Then** the API responds with HTTP 422 Unprocessable Entity; requests with `limit=1` and `limit=100` respond with HTTP 200 OK.
+
+### AC-18: Pagination With Corrupted Storage
+* **Given** the JSON storage file contains invalid JSON,
+* **When** a client requests `GET /api/v1/customers?limit=2&offset=1`,
+* **Then** the API responds with HTTP 500 Internal Server Error and the file content remains byte-for-byte identical to its content before the request.
+
 ## Test Scenarios
 * **TS-01 (Partial Name Search):** Verify search matches prefix, infix, and suffix substrings in customer names.
 * **TS-02 (Partial Email Search):** Verify search matches username, separator, domain, and TLD substrings.
@@ -125,6 +165,10 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * **TS-08 (Duplicate Email Prevention):** Verify attempting to create a customer with an existing email returns an appropriate client error.
 * **TS-09 (Full Listing):** Verify `GET /api/v1/customers` returns all entries from storage.
 * **TS-10 (Repository Initialization & Isolation):** Verify repository creates JSON file when absent and works reliably with `pytest`'s `tmp_path` fixture.
+* **TS-17 (Pagination Window):** Verify `limit` and `offset`, together and separately, return the expected records in storage order.
+* **TS-18 (Pagination Compatibility):** Verify omitting both parameters returns all records as a JSON array, and that an `offset` equal to or greater than the total returns `[]`.
+* **TS-19 (Pagination Validation):** Test parameter bounds (`limit`: $0 \rightarrow 422$, $1 \rightarrow 200$, $100 \rightarrow 200$, $101 \rightarrow 422$, $-1 \rightarrow 422$, non-integer $\rightarrow 422$; `offset`: $0 \rightarrow 200$, $-1 \rightarrow 422$, non-integer $\rightarrow 422$).
+* **TS-20 (Pagination With Corrupted Storage):** Verify a paginated request over invalid JSON returns `500` and leaves the file unchanged.
 
 ## Constraints
 * **Runtime & Framework:** Python 3.10+, FastAPI, Uvicorn.
@@ -133,5 +177,5 @@ Provide a lightweight, RESTful customer search capability that allows clients to
 * **Testing:** `pytest` test suite with `httpx` `TestClient` and temporary filesystem fixtures (`tmp_path`).
 
 ## Open Questions
-* **Q-01 (Pagination & Sorting):** N/A for initial release. Justification: In-memory filtering over local JSON is performant for expected dataset sizes; pagination will be addressed in future milestones if datasets grow.
+* **Q-01 (Pagination & Sorting):** Pagination of the customer listing is resolved by `FR-09`. Sorting and pagination of search results remain N/A. Justification: In-memory filtering over local JSON is performant for expected dataset sizes; they will be addressed in future milestones if datasets grow.
 * **Q-02 (Email Uniqueness Enforcement):** Enforced during customer creation (`POST /api/v1/customers`) to avoid duplicate profiles sharing the same email in the local JSON repository.

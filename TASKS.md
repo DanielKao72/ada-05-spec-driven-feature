@@ -78,3 +78,21 @@
   - Includes commands to execute the `pytest` test suite.
   - Provides example `curl` requests and JSON responses for all endpoints (`/search`, `POST /customers`, `GET /customers`).
 - **Verification:** Follow the documented steps in `README.md` sequentially to verify commands and examples function correctly.
+
+## T-08 Customer list pagination
+- **Goal:** Add the optional `limit` and `offset` query parameters to `GET /api/v1/customers` (FR-09, CR-002).
+- **Files:**
+  - `app/routers/customer_router.py`
+  - `app/services/customer_service.py`
+  - `app/repositories/json_customer_repository.py`
+  - `tests/test_customer_pagination_api.py`
+  - `tests/test_customer_service.py`
+  - `tests/test_json_customer_repository.py`
+  - `README.md`
+  - `docs/tracebility.md`
+- **Acceptance:**
+  - AC-13 through AC-18 are each covered by at least one test, with the AC ID in a comment next to the test.
+  - The router validates the parameters, the service delegates them, and the repository slices the records, as defined in `ARCHITECTURE.md`.
+  - `GET /api/v1/customers` without parameters behaves as defined by AC-07.
+  - `GET /api/v1/customers/search` and `POST /api/v1/customers` do not change.
+- **Verification:** Run `bash scripts/verify_repo.sh` and confirm it ends with `VERIFY_REPO: PASS`.
