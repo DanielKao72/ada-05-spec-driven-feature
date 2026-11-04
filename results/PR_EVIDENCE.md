@@ -2,7 +2,7 @@
 
 ## Change
 * **Change ID:** CR-002
-* **PR / Branch:** PR pending / `ada09/cr-002` (target: `ada08-after`)
+* **PR / Branch:** [PR #3](https://github.com/DanielKao72/ada-05-spec-driven-feature/pull/3) / `ada09/cr-002` (target: `ada08-after`)
 * **Base commit:** `fe80603` (branch base); `31be625` (approved specification)
 * **Final commit:** `83e4c36` (last code and test change, reviewed and verified). Later commits change only evidence under `results/`.
 
@@ -22,7 +22,7 @@
 * **Tests:** 84 passed, 1 warning
 * **Lint:** Not configured
 * **Security / repo checks:** Security not configured; `REPO_CONTRACT: PASS`
-* **CI:** PENDING. Inspect the `.github/workflows/verify.yml` result on the pull request.
+* **CI:** PASS. `Repository Verification` / `verify` succeeded at `88dcddf` on PR #3 ([run 41885618803](https://github.com/DanielKao72/ada-05-spec-driven-feature/actions/runs/41885618803/job/126769155673)).
 
 ## Independent Review
 * **Review report:** `results/review-report.md`, against `results/review-contract.md`, at `3e21ffc`
