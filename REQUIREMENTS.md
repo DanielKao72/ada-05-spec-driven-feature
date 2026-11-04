@@ -51,7 +51,15 @@ As a user, I want to search customers by name or email, so that I can quickly fi
 3. **Artifact:** Customer Retrieval Endpoint & JSON Repository
 4. **Environment:** Normal operation
 5. **Response:** Reads and deserializes all customer records stored in the local JSON file
-6. **Measure:** Returns HTTP 200 OK with a JSON array containing all persisted customer records (or `[]` if storage is empty)
+6. **Measure:** Returns HTTP 200 OK with a JSON array containing all persisted customer records (or `[]` if storage is empty) when the pagination parameters defined in FR-09 are omitted
+
+### FR-09: Customer List Pagination
+1. **Source:** API Client / Admin browsing the customer directory in smaller sets
+2. **Stimulus:** Submits a `GET /api/v1/customers` request with the optional query parameters `limit` and/or `offset`
+3. **Artifact:** Customer Retrieval Endpoint, Customer Service & JSON Repository
+4. **Environment:** Normal operation with local JSON storage containing customer records
+5. **Response:** Skips the first `offset` records in storage order and returns at most `limit` of the remaining records, using the same JSON array format as FR-06; rejects invalid parameter values
+6. **Measure:** Returns HTTP 200 OK with exactly the requested window of records (`[]` if `offset` is equal to or greater than the total), or HTTP 422 Unprocessable Entity when `limit` is outside 1 to 100, `offset` is negative, or either value is not an integer
 
 ## Non-Functional Requirements
 * **NFR-01 (Local JSON Persistence):** Data persistence must rely exclusively on a local JSON file (e.g., `data/customers.json`), with safe read/write operations and automatic file initialization if missing.
@@ -59,7 +67,7 @@ As a user, I want to search customers by name or email, so that I can quickly fi
 * **NFR-03 (Automated Testing & Code Quality):** Comprehensive test coverage using `pytest` and `httpx` (`TestClient`), leveraging isolated temporary JSON file fixtures (`tmp_path`) for unit and integration testing.
 
 ## Open Questions
-* **Q-01:** Will pagination (`limit`, `offset`) and sorting support be required if customer volume expands?
+* **Q-01:** Will sorting support be required if customer volume expands? Pagination (`limit`, `offset`) was resolved for the customer listing by FR-09; pagination of search results remains out of scope.
 * **Q-02:** Should duplicate email addresses be strictly prohibited when registering new customers in the JSON store?
 
 ## Constraints / Assumptions

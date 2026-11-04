@@ -49,6 +49,12 @@ class JsonCustomerRepository:
         raw_items = self._read_raw_data()
         return [Customer.model_validate(item) for item in raw_items]
 
+    def get_page(self, limit: Optional[int] = None, offset: int = 0) -> List[Customer]:
+        """Skips the first `offset` customers in storage order and returns at most `limit` of the rest."""
+        customers = self.get_all()
+        end = None if limit is None else offset + limit
+        return customers[offset:end]
+
     def get_by_id(self, customer_id: str) -> Optional[Customer]:
         """Finds a customer by their unique ID."""
         for customer in self.get_all():

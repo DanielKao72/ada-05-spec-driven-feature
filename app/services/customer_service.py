@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from app.core.exceptions import CustomerAlreadyExistsError
 from app.repositories.json_customer_repository import JsonCustomerRepository
@@ -27,7 +27,9 @@ class CustomerService:
         persisted = self.repository.save(customer)
         return CustomerResponse.model_validate(persisted)
 
-    def get_all_customers(self) -> List[CustomerResponse]:
-        """Retrieves all registered customers."""
-        all_customers = self.repository.get_all()
-        return [CustomerResponse.model_validate(c) for c in all_customers]
+    def get_all_customers(
+        self, limit: Optional[int] = None, offset: int = 0
+    ) -> List[CustomerResponse]:
+        """Retrieves registered customers, delegating the pagination window to the repository."""
+        customers = self.repository.get_page(limit=limit, offset=offset)
+        return [CustomerResponse.model_validate(c) for c in customers]

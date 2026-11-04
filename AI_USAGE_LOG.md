@@ -1,65 +1,80 @@
-# AI Usage Log — ADA-08 Agent-Ready Repository
+# AI Usage Log — ADA-09 Agentic Code Review
 
-
-### Entrada 1: Selección de la tarea controlada (CR-001)
-* **Etapa:** Definición de `TASK_UNDER_TEST.md`
+### Entrada 1: Definición del Change Request (CR-002)
+* **Etapa:** Selección del cambio y preparación de `CHANGE_REQUEST.md`
 * **Qué propuso la IA:**
-  - Descartó las opciones "agregar filtro", "agregar campo" y "modificar endpoint" porque exigían requisitos que no existen en `REQUIREMENTS.md`/`SPEC.md`, lo que viola la regla "Do not invent business requirements".
-  - Detectó un bug real: `_read_raw_data` atrapaba `JSONDecodeError` y devolvía `[]`, contradiciendo SPEC › Error Handling (HTTP 500 + logging) y provocando pérdida de datos en `POST`.
-  - Propuso criterios de aceptación CR-001-AC-01..AC-05 derivados de SPEC y NFR-01.
+  - Primero propuso un bug fix como cambio. El detalle se registrará al cerrar la revisión, para no influir en el reviewer.
+  - Después propuso paginar `GET /api/v1/customers` con `limit` y `offset`, partiendo de la pregunta abierta Q-01, y redactó FR-09 y AC-13 a AC-18.
+  - Detectó que el PR #2 ya usa FR-07, FR-08, AC-08 a AC-12, T-07 y TS-11 a TS-16, y eligió otros identificadores para evitar colisiones.
 * **Qué decisión tomó el estudiante:**
-  - Aceptó la tarea "corregir un bug con criterio de aceptación conocido".
-  - Pidió que el documento estuviera en inglés (convención de idioma del ADA) y que se agregaran criterios de aceptación explícitos.
+  - Descarté el bug fix como cambio de esta actividad y pedí una funcionalidad nueva, aunque hubiera que modificar los documentos del agente.
+  - Elegí paginar solo el listado, con `limit` de 1 a 100 y sin valor por defecto, y un PR hacia `ada08-after`.
 * **Qué cambió en el producto:**
-  - Se creó `TASK_UNDER_TEST.md` (CR-001) sin redefinir requisitos, citando NFR-01, FR-05, FR-06 y SPEC › Error Handling.
+  - Se actualizaron `REQUIREMENTS.md`, `SPEC.md`, `ARCHITECTURE.md`, `TASKS.md`, `AGENTS.md`, `docs/REPO_MAP.md` y `scripts/check_repo_contract.py`, sin tocar `app/` ni `tests/`.
 
 ---
 
-### Entrada 2: Auditoría inicial y evidencia BEFORE
-* **Etapa:** Repository Readiness Audit BEFORE y ejecución BEFORE
+### Entrada 2: Plan del coder-agent
+* **Etapa:** Fase 1, plan previo a la implementación
 * **Qué propuso la IA:**
-  - Revisó el diff del agente BEFORE.
-  - Corrigió la interpretación del documento `results/before-agent-run.md`.
-  - Señaló como observación de seguridad el uso de `git stash` / `git stash pop` sin una regla que lo cubriera.
+  - El coder-agent, en una sesión separada, propuso que el router validara `limit` y `offset`, el service los delegara y el repository recortara con `get_page`, además de agregar tests y actualizar `README.md` y `docs/tracebility.md`.
+  - Según `results/coder-report.md`, el plan usaba el binding `int` de FastAPI y Pydantic, y advertía que acepta formas como `2.0` y `1_0`.
 * **Qué decisión tomó el estudiante:**
-  - Realizó y calificó por su cuenta la auditoría BEFORE (49/100).
-  - Ajustó el reporte BEFORE: registró el modelo usado y dejó solo `README.md` como cambio fuera de alcance, considerando la matriz de trazabilidad como parte de la tarea.
+  - Aprobé el plan tal cual, sin cambios, antes de que el agente editara archivos.
 * **Qué cambió en el producto:**
-  - Evidencia BEFORE conservada en la rama `ada08-before` (resultado: PASS).
+  - Nada todavía; el plan autorizó la implementación de CR-002.
 
 ---
 
-### Entrada 3: Diseño de AGENTS.md, CLAUDE.md y REPO_MAP.md
-* **Etapa:** Mejoras Context y Navigation
+### Entrada 3: Implementación
+* **Etapa:** Fase 1, implementación del candidato (`3e21ffc`)
 * **Qué propuso la IA:**
-  - Reescribir `AGENTS.md` con Read First, Sources of Truth, Repository Map, Standard Commands, Change Rules, Stop Conditions y Definition of Done, sin copiar requisitos.
-  - Un `CLAUDE.md` mínimo que solo apunte a `AGENTS.md`.
-  - Reglas explícitas: actualizar `README.md` solo si cambia el contrato público de la API; actualizar `docs/tracebility.md` cuando se afecte un requisito; prohibir comandos git que alteran estado sin aprobación.
+  - Implementó la paginación en las tres capas y agregó 33 casos de prueba (de 36 a 69).
+  - Sugirió actualizar el conteo de pruebas de NFR-03 en `docs/tracebility.md`.
+  - Dejó sin corregir la entrada de `docs/REPO_MAP.md` porque el Change Request la bloqueaba, y lo declaró como limitación.
 * **Qué decisión tomó el estudiante:**
-  - Definió las reglas y los criterios necesarios para realizar las modificaciones a los archivos.
+  - Acepté las sugerencias del agente.
+  - Hice el commit del candidato y ejecuté el Verification Gate (`VERIFY_REPO: PASS`).
 * **Qué cambió en el producto:**
-  - Mejoras I-01, I-02 e I-03 en la rama `ada08-after` (commit `385f58c`).
+  - `GET /api/v1/customers` admite `limit` y `offset` opcionales; sin parámetros devuelve todos los registros.
 
 ---
 
-### Entrada 4: Guardrail automatizado
-* **Etapa:** Mejoras Executable Knowledge y Guardrail (I-04, I-05)
+### Entrada 4: Reviewer-agent
+* **Etapa:** Fase 4, revisión independiente de `3e21ffc`
 * **Qué propuso la IA:**
-  - `scripts/verify_repo.sh` como contrato único (pruebas + check de contrato).
-  - `scripts/check_repo_contract.py` con cuatro checks: archivos esenciales, rutas protegidas con override humano `ALLOW_PROTECTED_CHANGES=1`, archivos prohibidos versionados (`.env`, llaves, `data/*.json`) y rutas citadas en la documentación.
+  - Reportó 0 MUST FIX, 1 SHOULD FIX y 3 OPTIONAL, y recomendó `READY FOR HUMAN REVIEW`.
+  - RF-01: con 15 clientes guardados, `limit=1_0` respondía 200 con 10 registros y `limit=2.0` respondía 200 con 2, mientras que AC-17 pide 422 para valores "non-integer" sin definir el término, y ningún test fijaba ese comportamiento.
+  - Comprobó la suite con 19 mutaciones, y falló en todas. También señaló que los registros mal formados en el almacenamiento devuelven un 500 en texto plano.
 * **Qué decisión tomó el estudiante:**
-  - Convertir la regla "no modificar fuentes de verdad ni evidencia" en un check determinista en lugar de dejarla como instrucción.
+  - Revisé el reporte y pasé a la fase de decisión humana.
 * **Qué cambió en el producto:**
-  - Las reglas críticas de `AGENTS.md` pasaron de lenguaje natural a restricciones observables.
+  - Nada; el reviewer no modificó código. Se agregaron `results/review-contract.md` y `results/review-report.md`.
 
 ---
 
-### Entrada 5: CI como contrato compartido
-* **Etapa:** Mejora CI Check (I-06)
+### Entrada 5: Human review
+* **Etapa:** Fase 5, decisiones sobre los findings
 * **Qué propuso la IA:**
-  - `.github/workflows/verify.yml`, que instala dependencias y ejecuta el mismo `scripts/verify_repo.sh`, sin duplicar lógica.
+  - La sesión de planeación, que no actuó como coder ni como reviewer, recomendó una decisión para cada finding.
 * **Qué decisión tomó el estudiante:**
-  - Compartir entre humano, agente y CI exactamente las mismas verificaciones (pruebas + contrato del repositorio) para que la validación no dependa de una conversación con el agente.
-  - Aceptar como limitación conocida que el check de rutas protegidas no aporta en CI porque compara contra `HEAD`.
+  - Acepté las recomendaciones en los cuatro findings: RF-01 y RF-02 MODIFIED, RF-03 DEFERRED y RF-04 ACCEPTED.
+  - Definí "non-integer" como un valor que el parseo de enteros de Pydantic rechaza.
+  - Escribí yo mismo `results/human-review-decisions.md`.
+  - Corregí yo mismo la entrada de `docs/REPO_MAP.md`, la parte de RF-02 que me correspondía.
 * **Qué cambió en el producto:**
-  - Un solo contrato de verificación para las tres partes.
+  - Ningún cambio en producción; las decisiones definieron el alcance del fix.
+
+---
+
+### Entrada 6: Fix cycle y re-review
+* **Etapa:** Fases 6 y 7
+* **Qué propuso la IA:**
+  - El coder-agent, en una sesión nueva, agregó 15 casos de prueba (de 69 a 84), corrigió `README.md` y `docs/tracebility.md`, y sugirió actualizar el conteo de NFR-03 de 69 a 84, algo que iba más allá del texto de RF-02.
+  - La sesión de planeación detectó que `results/pr.diff` y `results/commits.txt` no estaban actualizados antes del re-review.
+  - El reviewer-agent, en otra sesión, marcó RF-01, RF-02 y RF-04 como RESOLVED, sin nuevos MUST FIX, y comprobó con mutaciones que los tests nuevos pueden fallar.
+* **Qué decisión tomó el estudiante:**
+  - Aprobé el plan del fix y el conteo de 84 pruebas.
+  - Regeneré la evidencia antes del re-review y no reescribí los mensajes de commit, porque la evidencia cita esos hashes.
+* **Qué cambió en el producto:**
+  - Los tests fijan el parseo aceptado y cubren el formato paginado y `limit=100`. `app/` no cambió.

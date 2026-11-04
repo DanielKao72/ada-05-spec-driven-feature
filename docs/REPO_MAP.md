@@ -29,6 +29,7 @@ Answers "where is what I need?". Layer rules come from `ARCHITECTURE.md`.
 | `tests/test_customer_service.py` | Service unit tests. |
 | `tests/test_customer_api_validation.py` | API status codes and validation errors. |
 | `tests/test_customer_search_api.py` | Acceptance scenarios AC-01..AC-07 / TS-01..TS-10. |
+| `tests/test_customer_pagination_api.py` | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
 
 Tests must never read or write `data/customers.json`; always use `tmp_path`.
 
@@ -58,7 +59,8 @@ If changing business rules:
 ## Do Not Edit Directly
 Enforced by `scripts/check_repo_contract.py` (human override: `ALLOW_PROTECTED_CHANGES=1`).
 - `REQUIREMENTS.md`, `SPEC.md` - sources of truth; change only by human decision.
-- `TASK_UNDER_TEST.md` - task definition under test.
+- `TASK_UNDER_TEST.md` - closed CR-001 task definition from ADA-08.
+- `CHANGE_REQUEST.md` - approved change request; change only by human decision.
 - `REPOSITORY_READINESS_AUDIT.md`, `results/` - course evidence.
 - `scripts/`, `.github/` - verification guardrails.
 - `data/` - runtime storage; must never be versioned.

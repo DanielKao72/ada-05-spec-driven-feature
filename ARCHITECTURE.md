@@ -57,10 +57,10 @@ flowchart TD
 
 | Component | Responsibility |
 | :--- | :--- |
-| **`CustomerRouter`** | HTTP transport, parameter binding, routing, HTTP response formatting |
+| **`CustomerRouter`** | HTTP transport, parameter binding and validation (including `limit` and `offset` bounds), routing, HTTP response formatting |
 | **`Pydantic Schemas`** | Input validation (types, lengths, email format), response serialization |
-| **`CustomerService`** | Query normalization, business validation (uniqueness), coordinating repository calls |
-| **`JsonCustomerRepository`** | Safe JSON deserialization/serialization, directory and file bootstrapping, collection filtering |
+| **`CustomerService`** | Query normalization, business validation (uniqueness), coordinating repository calls (pagination parameters are delegated, not sliced here) |
+| **`JsonCustomerRepository`** | Safe JSON deserialization/serialization, directory and file bootstrapping, collection filtering and pagination slicing |
 | **`Configuration`** | Storage path management, environment variable loading |
 
 ---
@@ -106,6 +106,7 @@ sequenceDiagram
 class JsonCustomerRepository:
     def __init__(self, file_path: Path) -> None: ...
     def get_all(self) -> list[Customer]: ...
+    def get_page(self, limit: int | None = None, offset: int = 0) -> list[Customer]: ...
     def get_by_id(self, customer_id: str) -> Customer | None: ...
     def get_by_email(self, email: str) -> Customer | None: ...
     def search(self, term: str) -> list[Customer]: ...
@@ -118,19 +119,19 @@ class CustomerService:
     def __init__(self, repository: JsonCustomerRepository) -> None: ...
     def search_customers(self, query: str) -> list[CustomerResponse]: ...
     def create_customer(self, customer_in: CustomerCreate) -> CustomerResponse: ...
-    def get_all_customers(self) -> list[CustomerResponse]: ...
+    def get_all_customers(self, limit: int | None = None, offset: int = 0) -> list[CustomerResponse]: ...
 ```
 
 ### HTTP REST Endpoints
 * `GET /api/v1/customers/search?q={query}`: Searches customers by partial name or email.
 * `POST /api/v1/customers`: Registers a new customer record.
-* `GET /api/v1/customers`: Returns all existing customer records.
+* `GET /api/v1/customers?limit={limit}&offset={offset}`: Returns existing customer records in storage order. `limit` and `offset` are optional; omitting both returns all records.
 
 ---
 
 ## Error Handling
 
-* **Validation Failures (HTTP 422):** FastAPI and Pydantic automatically intercept malformed queries (missing `q`, length $< 2$ or $> 100$) and invalid body payloads (invalid email format, empty strings), returning standardized error schemas.
+* **Validation Failures (HTTP 422):** FastAPI and Pydantic automatically intercept malformed queries (missing `q`, length $< 2$ or $> 100$, `limit` outside 1 to 100, negative `offset`, non-integer `limit` or `offset`) and invalid body payloads (invalid email format, empty strings), returning standardized error schemas.
 * **Conflict Errors (HTTP 409):** Raised by `CustomerService` when an attempt is made to register a customer with an email address that is already present in the JSON file.
 * **Storage and Parsing Errors (HTTP 500):** If the JSON file cannot be read or is corrupted, internal exceptions are captured and logged, returning an internal server error response without exposing sensitive stack traces.
 
@@ -162,6 +163,7 @@ class CustomerService:
 2. **Local JSON File Persistence:** Eliminates infrastructure complexity (no database server or Docker container required), satisfying the project constraints while providing durable storage.
 3. **In-Memory Substring Filtering:** Reads the JSON file and performs Python string checks (`term in field.lower()`), ensuring clean case-insensitive partial matching without external indexing engines.
 4. **Pydantic v2 Contracts:** Ensures strict type safety, automatic validation, and standardized OpenAPI/Swagger schema documentation.
+5. **Pagination in the Repository:** The router validates `limit` and `offset`, the service delegates them, and the repository slices the records. A future storage backend could then paginate natively by changing only the repository layer.
 
 ---
 

@@ -4,19 +4,27 @@ Operational contract for any coding agent (and human) working in this repository
 This file says where things are and how to work; it does not restate requirements.
 
 ## Read First
-1. `TASK_UNDER_TEST.md` - the change currently requested (if present).
+1. `CHANGE_REQUEST.md` - the change currently requested.
 2. `REQUIREMENTS.md` - functional and non-functional requirements (FR-xx, NFR-xx).
 3. `SPEC.md` - verifiable behavior, acceptance criteria (AC-xx), error handling.
 4. `ARCHITECTURE.md` - layers, responsibilities, error-handling strategy.
 5. `docs/REPO_MAP.md` - where each thing lives, change guide, protected paths.
-6. `TASKS.md` - original implementation task breakdown (T-01..T-06).
+6. `TASKS.md` - implementation task breakdown.
+
+`TASK_UNDER_TEST.md` is the closed CR-001 task from ADA-08. Keep it as history; it does not request any current work.
 
 ## Sources of Truth
 - Requirements live only in `REQUIREMENTS.md`.
 - Verifiable behavior and acceptance criteria live only in `SPEC.md`.
 - Layer boundaries live in `ARCHITECTURE.md`.
-- `TASK_UNDER_TEST.md` references requirements; it never overrides them.
+- `CHANGE_REQUEST.md` references requirements; it never overrides them.
 - Do not change requirements, spec or task files to make tests pass.
+
+## Roles
+A change moves through separate roles. The same agent, session or context must not both implement and approve a change.
+- Coder agent: plans and implements the approved change, runs the checks and documents its work. It does not approve its own change or close review findings.
+- Reviewer agent: inspects the change against requirements, architecture, APIs, tests and evidence, and reports findings. It does not modify code.
+- Human: approves the change request, decides on each finding, decides readiness and performs the merge.
 
 ## Repository Map
 - `app/` - FastAPI application (router -> service -> repository).

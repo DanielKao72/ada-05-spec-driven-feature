@@ -1,0 +1,569 @@
+diff --git a/README.md b/README.md
+index 5c0f642..e0a4255 100644
+--- a/README.md
++++ b/README.md
+@@ -40,7 +40,9 @@ ada-05-spec-driven-feature/
+ │   ├── test_json_customer_repository.py# Unit tests for repository layer
+ │   ├── test_customer_service.py        # Unit tests for service layer
+ │   ├── test_customer_api_validation.py # Integration tests for status codes & errors
+-│   └── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
++│   ├── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
++│   ├── test_customer_pagination_api.py # End-to-end acceptance tests for list pagination
++│   └── test_corrupted_storage.py       # Corrupted JSON storage handling tests
+ ├── requirements.txt                    # Project dependencies
+ ├── REQUIREMENTS.md                     # Functional & non-functional requirements
+ ├── SPEC.md                             # Feature specification & acceptance criteria
+@@ -231,9 +233,14 @@ If the JSON storage file contains invalid JSON, `GET /api/v1/customers`, `GET /a
+ ---
+ 
+ ### 4. List All Customers
+-Retrieves all customer records currently persisted in the JSON store.
++Retrieves customer records from the JSON store in storage order. Without query parameters, it returns all of them.
+ 
+ - **Endpoint:** `GET /api/v1/customers`
++- **Query Parameters:**
++  - `limit` (optional, integer from 1 to 100): maximum number of records to return. When omitted, no upper bound is applied.
++  - `offset` (optional, integer of 0 or greater, default `0`): number of records to skip.
++
++#### List All Customers:
+ - **Request:**
+   ```bash
+   curl -X GET http://127.0.0.1:8000/api/v1/customers
+@@ -249,3 +256,54 @@ Retrieves all customer records currently persisted in the JSON store.
+     }
+   ]
+   ```
++
++#### List a Page of Customers:
++Skips the first `offset` records and returns at most `limit` of the remaining ones. The response is the same JSON array, without a total count.
++
++- **Request:**
++  ```bash
++  curl -X GET "http://127.0.0.1:8000/api/v1/customers?limit=1&offset=1"
++  ```
++- **Response (HTTP 200 OK):**
++  ```json
++  [
++    {
++      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
++      "name": "Jane Doe",
++      "email": "jane.doe@example.com",
++      "created_at": "2026-09-23T23:45:00.000000+00:00"
++    }
++  ]
++  ```
++
++#### Offset Beyond the Total:
++- **Request:**
++  ```bash
++  curl -X GET "http://127.0.0.1:8000/api/v1/customers?offset=1000"
++  ```
++- **Response (HTTP 200 OK):**
++  ```json
++  []
++  ```
++
++#### Validation Error (Parameter out of range):
++A `limit` outside 1 to 100, a negative `offset`, or a non-integer value for either parameter is rejected.
++
++- **Request:**
++  ```bash
++  curl -X GET "http://127.0.0.1:8000/api/v1/customers?limit=101"
++  ```
++- **Response (HTTP 422 Unprocessable Entity):**
++  ```json
++  {
++    "detail": [
++      {
++        "type": "less_than_equal",
++        "loc": ["query", "limit"],
++        "msg": "Input should be less than or equal to 100",
++        "input": "101",
++        "ctx": {"le": 100}
++      }
++    ]
++  }
++  ```
+diff --git a/app/repositories/json_customer_repository.py b/app/repositories/json_customer_repository.py
+index 8266735..c822a9b 100644
+--- a/app/repositories/json_customer_repository.py
++++ b/app/repositories/json_customer_repository.py
+@@ -49,6 +49,12 @@ class JsonCustomerRepository:
+         raw_items = self._read_raw_data()
+         return [Customer.model_validate(item) for item in raw_items]
+ 
++    def get_page(self, limit: Optional[int] = None, offset: int = 0) -> List[Customer]:
++        """Skips the first `offset` customers in storage order and returns at most `limit` of the rest."""
++        customers = self.get_all()
++        end = None if limit is None else offset + limit
++        return customers[offset:end]
++
+     def get_by_id(self, customer_id: str) -> Optional[Customer]:
+         """Finds a customer by their unique ID."""
+         for customer in self.get_all():
+diff --git a/app/routers/customer_router.py b/app/routers/customer_router.py
+index 6eeb01c..aec1f74 100644
+--- a/app/routers/customer_router.py
++++ b/app/routers/customer_router.py
+@@ -1,4 +1,4 @@
+-from typing import List
++from typing import List, Optional
+ from fastapi import APIRouter, Depends, HTTPException, Query, status
+ 
+ from app.core.exceptions import CustomerAlreadyExistsError
+@@ -64,10 +64,24 @@ def create_customer(
+     "",
+     response_model=List[CustomerResponse],
+     status_code=status.HTTP_200_OK,
+-    summary="List all customers",
+-    description="Retrieves the complete collection of registered customers.",
++    summary="List customers",
++    description=(
++        "Retrieves registered customers in storage order. Without `limit` and `offset`, "
++        "returns the complete collection."
++    ),
+ )
+ def get_all_customers(
++    limit: Optional[int] = Query(
++        None,
++        ge=1,
++        le=100,
++        description="Maximum number of customers to return (1 to 100). When omitted, no upper bound is applied.",
++    ),
++    offset: int = Query(
++        0,
++        ge=0,
++        description="Number of customers to skip from the start of the collection.",
++    ),
+     service: CustomerService = Depends(get_customer_service),
+ ) -> List[CustomerResponse]:
+-    return service.get_all_customers()
++    return service.get_all_customers(limit=limit, offset=offset)
+diff --git a/app/services/customer_service.py b/app/services/customer_service.py
+index 98557dd..7b263ea 100644
+--- a/app/services/customer_service.py
++++ b/app/services/customer_service.py
+@@ -1,4 +1,4 @@
+-from typing import List
++from typing import List, Optional
+ 
+ from app.core.exceptions import CustomerAlreadyExistsError
+ from app.repositories.json_customer_repository import JsonCustomerRepository
+@@ -27,7 +27,9 @@ class CustomerService:
+         persisted = self.repository.save(customer)
+         return CustomerResponse.model_validate(persisted)
+ 
+-    def get_all_customers(self) -> List[CustomerResponse]:
+-        """Retrieves all registered customers."""
+-        all_customers = self.repository.get_all()
+-        return [CustomerResponse.model_validate(c) for c in all_customers]
++    def get_all_customers(
++        self, limit: Optional[int] = None, offset: int = 0
++    ) -> List[CustomerResponse]:
++        """Retrieves registered customers, delegating the pagination window to the repository."""
++        customers = self.repository.get_page(limit=limit, offset=offset)
++        return [CustomerResponse.model_validate(c) for c in customers]
+diff --git a/docs/REPO_MAP.md b/docs/REPO_MAP.md
+index a74d744..be95cd2 100644
+--- a/docs/REPO_MAP.md
++++ b/docs/REPO_MAP.md
+@@ -29,7 +29,7 @@ Answers "where is what I need?". Layer rules come from `ARCHITECTURE.md`.
+ | `tests/test_customer_service.py` | Service unit tests. |
+ | `tests/test_customer_api_validation.py` | API status codes and validation errors. |
+ | `tests/test_customer_search_api.py` | Acceptance scenarios AC-01..AC-07 / TS-01..TS-10. |
+-| tests/test_customer_pagination_api.py (planned, CR-002) | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
++| `tests/test_customer_pagination_api.py` | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
+ 
+ Tests must never read or write `data/customers.json`; always use `tmp_path`.
+ 
+diff --git a/docs/tracebility.md b/docs/tracebility.md
+index e423283..98f0af6 100644
+--- a/docs/tracebility.md
++++ b/docs/tracebility.md
+@@ -7,10 +7,12 @@
+ | **FR-03** | AC-04, TS-05 | T-04, T-05 | `app/routers/customer_router.py` | `test_ts05_search_query_boundary_validation`, `test_search_missing_query_parameter`, `test_search_query_too_short`, `test_search_query_whitespace_only`, `test_search_query_too_long` | **Implementado correctamente** | Valida longitud ($2 \le \text{longitud} \le 100$) y rechaza cadenas vacías/espacios con HTTP 422. |
+ | **FR-04** | AC-05, TS-06 | T-03, T-04, T-05 | `app/repositories/json_customer_repository.py`, `app/services/customer_service.py`, `app/routers/customer_router.py` | `test_ts06_search_no_matching_results`, `test_service_search_customers_with_trimming` | **Implementado correctamente** | Una búsqueda que no tiene resultados es manejado como correcta (HTTP 200) y devuelve una lista vacía `[]` . |
+ | **FR-05** | AC-06, TS-07, TS-08 | T-02, T-03, T-04, T-05 | `app/schemas/customer.py`, `app/core/exceptions.py`, `app/repositories/json_customer_repository.py`, `app/services/customer_service.py`, `app/routers/customer_router.py` | `test_ts07_customer_creation_persistence`, `test_ts08_duplicate_email_conflict`, `test_customer_create_valid`, `test_service_create_customer_and_prevent_duplicates` | **Implementado correctamente** | `POST /api/v1/customers` genera UUID y marca de tiempo UTC, valida email y evita correos duplicados. |
+-| **FR-06** | AC-07, TS-09 | T-03, T-04, T-05 | `app/repositories/json_customer_repository.py`, `app/services/customer_service.py`, `app/routers/customer_router.py` | `test_ts09_list_all_customers`, `test_service_get_all_customers` | **Implementado correctamente** | `GET /api/v1/customers` recupera todos los registros de clientes guardados en el JSON local. |
++| **FR-06** | AC-07, TS-09 | T-03, T-04, T-05 | `app/repositories/json_customer_repository.py`, `app/services/customer_service.py`, `app/routers/customer_router.py` | `test_ts09_list_all_customers`, `test_service_get_all_customers` | **Implementado correctamente** | `GET /api/v1/customers` recupera todos los registros de clientes guardados en el JSON local. Sin `limit` ni `offset` conserva este comportamiento (regresión cubierta por CR-002: `test_ac14_listing_without_parameters_returns_all`). |
++| **FR-09** | AC-13..AC-18, TS-17..TS-20 | T-08 | `app/routers/customer_router.py`, `app/services/customer_service.py`, `app/repositories/json_customer_repository.py` | `tests/test_customer_pagination_api.py` (`test_ac13_*` a `test_ac18_*`), `test_repository_get_page_*`, `test_service_get_all_customers_returns_window`, `test_service_get_all_customers_defaults_return_all`, `test_service_delegates_pagination_to_repository` | **Implementado, pendiente de revisión** | El router valida `limit` y `offset`, el servicio los delega y el repositorio recorta los registros en orden de almacenamiento. |
+ | **NFR-01** | Modelo de Dominio, TS-10 | T-01, T-03, T-05 | `app/core/config.py`, `app/repositories/json_customer_repository.py`, `data/customers.json` | `test_repository_creates_missing_file`, `test_repository_save_and_retrieve` | **Implementado correctamente** | Persistencia de los datos en un archivo JSON local. Se inicializa al ejecutar la app. |
+ | **NFR-02** | Arquitectura, Alcance | T-01, T-03, T-04, T-05 | `app/dependencies.py`, `app/routers/customer_router.py`, `app/services/customer_service.py`, `app/repositories/json_customer_repository.py` | `tests/conftest.py` (override de dependencias con `get_customer_repository`) | **Implementado correctamente** | Se diseñó la app siguiendo una arquitectura de capas (Router $\rightarrow$ Service $\rightarrow$ Repository). |
+-| **NFR-03** | Estrategia de Pruebas, TS-01..TS-10 | T-01, T-05 | `requirements.txt`, `tests/conftest.py`, `tests/test_*.py` | Suite completa de pruebas (`pytest -v`, 36 pruebas) | **Implementado correctamente** | |
++| **NFR-03** | Estrategia de Pruebas, TS-01..TS-10, TS-17..TS-20 | T-01, T-05 | `requirements.txt`, `tests/conftest.py`, `tests/test_*.py` | Suite completa de pruebas (`pytest -v`, 84 pruebas) | **Implementado correctamente** | |
+ | **CR-001** (NFR-01, FR-05, FR-06) | SPEC › Error Handling (HTTP 500), CR-001-AC-01..AC-05 | CR-001 | `app/core/exceptions.py`, `app/repositories/json_customer_repository.py`, `app/main.py`, `tests/test_corrupted_storage.py` | `test_list_customers_with_corrupted_storage_returns_500`, `test_search_customers_with_corrupted_storage_returns_500`, `test_create_customer_with_corrupted_storage_does_not_overwrite_file`, `test_corrupted_storage_emits_error_log`, `test_repository_raises_on_corrupted_storage`, `test_empty_storage_file_is_treated_as_empty_list`, `test_missing_storage_file_is_initialized` | **Implementado correctamente** | Un JSON corrupto ya no se trata como `[]`: el repositorio registra un error (ruta + fallo de decodificación) y lanza `StorageCorruptedError`; la API responde HTTP 500 y el archivo no se sobrescribe. |
++| **CR-002** (FR-09, FR-06) | AC-07, AC-13..AC-18 | T-08 | `app/routers/customer_router.py`, `app/services/customer_service.py`, `app/repositories/json_customer_repository.py`, `tests/test_customer_pagination_api.py`, `tests/test_customer_service.py`, `tests/test_json_customer_repository.py`, `README.md` | `tests/test_customer_pagination_api.py`, `test_ts09_list_all_customers`, `test_list_customers_with_corrupted_storage_returns_500` | **Implementado, pendiente de revisión** | Paginación opcional de `GET /api/v1/customers`. `GET /api/v1/customers/search` y `POST /api/v1/customers` no cambian. |
+ 
+ ---
+\ No newline at end of file
+diff --git a/tests/test_customer_pagination_api.py b/tests/test_customer_pagination_api.py
+new file mode 100644
+index 0000000..ebd8542
+--- /dev/null
++++ b/tests/test_customer_pagination_api.py
+@@ -0,0 +1,219 @@
++from pathlib import Path
++from typing import List
++
++import pytest
++from fastapi.testclient import TestClient
++
++from app.repositories.json_customer_repository import JsonCustomerRepository
++from app.schemas.customer import Customer
++
++CUSTOMERS_URL = "/api/v1/customers"
++
++
++def seed_customers(repo: JsonCustomerRepository, count: int) -> List[str]:
++    """Stores `count` customers and returns their emails in storage order."""
++    emails = []
++    for number in range(1, count + 1):
++        email = f"customer{number}@example.com"
++        repo.save(Customer(name=f"Customer {number}", email=email))
++        emails.append(email)
++    return emails
++
++
++def emails_in(response) -> List[str]:
++    return [customer["email"] for customer in response.json()]
++
++
++# AC-13 / TS-17: limit and offset together return the window in storage order
++def test_ac13_paginated_window(client: TestClient, test_repo: JsonCustomerRepository) -> None:
++    emails = seed_customers(test_repo, 5)
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=2&offset=1")
++
++    assert response.status_code == 200
++    assert emails_in(response) == [emails[1], emails[2]]
++
++
++# AC-14 / AC-07 / TS-18: omitting both parameters returns all records as a JSON array
++def test_ac14_listing_without_parameters_returns_all(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    emails = seed_customers(test_repo, 5)
++
++    response = client.get(CUSTOMERS_URL)
++
++    assert response.status_code == 200
++    assert isinstance(response.json(), list)
++    assert emails_in(response) == emails
++
++
++# AC-14 / AC-07 / TS-18: omitting limit applies no upper bound on the returned records
++def test_ac14_listing_without_parameters_has_no_implicit_cap(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    emails = seed_customers(test_repo, 101)
++
++    response = client.get(CUSTOMERS_URL)
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails
++
++
++# AC-15 / TS-17: limit alone returns the first records
++def test_ac15_limit_only(client: TestClient, test_repo: JsonCustomerRepository) -> None:
++    emails = seed_customers(test_repo, 5)
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=2")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails[:2]
++
++
++# AC-15 / TS-17: offset alone returns the remaining records
++def test_ac15_offset_only(client: TestClient, test_repo: JsonCustomerRepository) -> None:
++    emails = seed_customers(test_repo, 5)
++
++    response = client.get(f"{CUSTOMERS_URL}?offset=3")
++
++    assert response.status_code == 200
++    assert emails_in(response) == [emails[3], emails[4]]
++
++
++# AC-16 / TS-18: an offset equal to or greater than the total returns an empty list
++@pytest.mark.parametrize("offset", [5, 6, 10**20])
++def test_ac16_offset_beyond_total_returns_empty_list(
++    client: TestClient, test_repo: JsonCustomerRepository, offset: int
++) -> None:
++    seed_customers(test_repo, 5)
++
++    response = client.get(f"{CUSTOMERS_URL}?offset={offset}")
++
++    assert response.status_code == 200
++    assert response.json() == []
++
++
++# AC-17 / TS-19: invalid limit or offset values are rejected
++@pytest.mark.parametrize(
++    "query",
++    [
++        "limit=0",
++        "limit=101",
++        "limit=-1",
++        "limit=abc",
++        "limit=1.5",
++        "offset=-1",
++        "offset=abc",
++        "offset=1.5",
++    ],
++)
++def test_ac17_invalid_parameters_return_422(client: TestClient, query: str) -> None:
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 422
++
++
++# AC-17 / TS-19: boundary values are accepted
++@pytest.mark.parametrize("query", ["limit=1", "limit=100", "offset=0"])
++def test_ac17_boundary_parameters_return_200(client: TestClient, query: str) -> None:
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 200
++
++
++# AC-17 / TS-19: "non-integer" means a value Pydantic's integer parsing rejects
++# (results/human-review-decisions.md, RF-01), so these forms are accepted.
++# Queries stay in the raw URL: `params=` would encode "+" as %2B and send a different input.
++@pytest.mark.parametrize(
++    ("query", "expected_slice"),
++    [
++        ("limit=2.0", slice(2)),
++        ("offset=1.0", slice(1, None)),
++        ("limit=1_0", slice(10)),
++        ("offset=1_0", slice(10, None)),
++        ("limit=+5", slice(5)),
++        ("limit=%205", slice(5)),
++        ("limit=5%20", slice(5)),
++    ],
++)
++def test_ac17_lax_integer_forms_return_200_with_expected_records(
++    client: TestClient, test_repo: JsonCustomerRepository, query: str, expected_slice: slice
++) -> None:
++    emails = seed_customers(test_repo, 15)
++
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails[expected_slice]
++
++
++# AC-17 / TS-19: forms that Pydantic's integer parsing rejects return 422 (RF-01)
++@pytest.mark.parametrize(
++    "query",
++    [
++        "limit=1.5",
++        "limit=abc",
++        "limit=true",
++        "limit=",
++        "limit=1e1",
++        "limit=0x10",
++    ],
++)
++def test_ac17_rejected_integer_forms_return_422(client: TestClient, query: str) -> None:
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 422
++
++
++# AC-13 / FR-09: a paginated response has the same format as the matching slice of the full listing
++def test_ac13_paginated_response_matches_full_listing_slice(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    seed_customers(test_repo, 5)
++    full_listing = client.get(CUSTOMERS_URL).json()
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=2&offset=1")
++
++    assert response.status_code == 200
++    page = response.json()
++    assert len(page) == 2
++    assert page == full_listing[1:3]
++    for customer in page:
++        assert set(customer) == {"id", "name", "email", "created_at"}
++
++
++# AC-17 / TS-19: limit=100 is applied as the upper limit when more records are stored
++def test_ac17_limit_100_over_101_records(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    emails = seed_customers(test_repo, 101)
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=100")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails[:100]
++
++
++# AC-18 / TS-20: a paginated request over invalid JSON returns 500 and leaves the file unchanged
++def test_ac18_pagination_with_corrupted_storage_returns_500(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    storage_file: Path = test_repo.file_path
++    storage_file.write_bytes(b"{not valid json")
++    original_content = storage_file.read_bytes()
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=2&offset=1")
++
++    assert response.status_code == 500
++    assert storage_file.read_bytes() == original_content
++
++
++# CR-002 constraint: search results are not paginated
++def test_search_ignores_pagination_parameters(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    emails = seed_customers(test_repo, 3)
++
++    response = client.get(f"{CUSTOMERS_URL}/search?q=customer&limit=1&offset=1")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails
+diff --git a/tests/test_customer_service.py b/tests/test_customer_service.py
+index e836f77..f6cde8f 100644
+--- a/tests/test_customer_service.py
++++ b/tests/test_customer_service.py
+@@ -3,7 +3,7 @@ import pytest
+ 
+ from app.core.exceptions import CustomerAlreadyExistsError
+ from app.repositories.json_customer_repository import JsonCustomerRepository
+-from app.schemas.customer import CustomerCreate
++from app.schemas.customer import CustomerCreate, CustomerResponse
+ from app.services.customer_service import CustomerService
+ 
+ 
+@@ -52,3 +52,52 @@ def test_service_get_all_customers(tmp_path: Path) -> None:
+ 
+     service.create_customer(CustomerCreate(name="Barry Allen", email="barry@centralcity.gov"))
+     assert len(service.get_all_customers()) == 1
++
++
++def _service_with_customers(tmp_path: Path, count: int) -> tuple[CustomerService, list[str]]:
++    service = CustomerService(JsonCustomerRepository(tmp_path / "customers.json"))
++    emails = [f"customer{number}@example.com" for number in range(1, count + 1)]
++    for number, email in enumerate(emails, start=1):
++        service.create_customer(CustomerCreate(name=f"Customer {number}", email=email))
++    return service, emails
++
++
++# AC-13: the service returns the requested window as response schemas
++def test_service_get_all_customers_returns_window(tmp_path: Path) -> None:
++    service, emails = _service_with_customers(tmp_path, 5)
++
++    results = service.get_all_customers(limit=2, offset=1)
++
++    assert all(isinstance(result, CustomerResponse) for result in results)
++    assert [result.email for result in results] == emails[1:3]
++
++
++# AC-14: without arguments the service returns every customer
++def test_service_get_all_customers_defaults_return_all(tmp_path: Path) -> None:
++    service, emails = _service_with_customers(tmp_path, 5)
++
++    assert [result.email for result in service.get_all_customers()] == emails
++
++
++# FR-09: pagination is delegated to the repository, not sliced in the service
++@pytest.mark.parametrize(
++    "kwargs, expected",
++    [
++        ({}, {"limit": None, "offset": 0}),
++        ({"limit": 2, "offset": 1}, {"limit": 2, "offset": 1}),
++    ],
++)
++def test_service_delegates_pagination_to_repository(
++    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kwargs: dict, expected: dict
++) -> None:
++    repo = JsonCustomerRepository(tmp_path / "customers.json")
++    calls = []
++
++    def spy_get_page(limit=None, offset=0):
++        calls.append({"limit": limit, "offset": offset})
++        return []
++
++    monkeypatch.setattr(repo, "get_page", spy_get_page)
++
++    assert CustomerService(repo).get_all_customers(**kwargs) == []
++    assert calls == [expected]
+diff --git a/tests/test_json_customer_repository.py b/tests/test_json_customer_repository.py
+index 5f02160..e2fc4e2 100644
+--- a/tests/test_json_customer_repository.py
++++ b/tests/test_json_customer_repository.py
+@@ -1,6 +1,7 @@
+ from pathlib import Path
+ import pytest
+ 
++from app.core.exceptions import StorageCorruptedError
+ from app.repositories.json_customer_repository import JsonCustomerRepository
+ from app.schemas.customer import Customer
+ 
+@@ -67,3 +68,67 @@ def test_repository_search_partial_and_case_insensitive(tmp_path: Path) -> None:
+ 
+     # Non-matching search
+     assert repo.search("nonexistent") == []
++
++
++def _repo_with_customers(tmp_path: Path, count: int) -> tuple[JsonCustomerRepository, list[Customer]]:
++    repo = JsonCustomerRepository(tmp_path / "customers.json")
++    customers = [
++        Customer(name=f"Customer {number}", email=f"customer{number}@example.com")
++        for number in range(1, count + 1)
++    ]
++    for customer in customers:
++        repo.save(customer)
++    return repo, customers
++
++
++# AC-13: limit and offset together select the window in storage order
++def test_repository_get_page_window(tmp_path: Path) -> None:
++    repo, customers = _repo_with_customers(tmp_path, 5)
++    assert repo.get_page(limit=2, offset=1) == customers[1:3]
++
++
++# AC-15: limit alone returns the first records; a limit past the end returns what remains
++def test_repository_get_page_limit_only(tmp_path: Path) -> None:
++    repo, customers = _repo_with_customers(tmp_path, 5)
++    assert repo.get_page(limit=2) == customers[:2]
++    assert repo.get_page(limit=100) == customers
++
++
++# AC-15: offset alone returns the remaining records
++def test_repository_get_page_offset_only(tmp_path: Path) -> None:
++    repo, customers = _repo_with_customers(tmp_path, 5)
++    assert repo.get_page(offset=3) == customers[3:]
++
++
++# AC-14: without arguments the page is the full collection
++def test_repository_get_page_defaults_match_get_all(tmp_path: Path) -> None:
++    repo, customers = _repo_with_customers(tmp_path, 5)
++    assert repo.get_page() == customers
++    assert repo.get_page() == repo.get_all()
++
++
++# AC-16: an offset equal to or greater than the total returns an empty list
++@pytest.mark.parametrize("offset", [5, 6])
++def test_repository_get_page_offset_beyond_total(tmp_path: Path, offset: int) -> None:
++    repo, _ = _repo_with_customers(tmp_path, 5)
++    assert repo.get_page(limit=2, offset=offset) == []
++    assert repo.get_page(offset=offset) == []
++
++
++# FR-09: empty storage yields an empty page
++def test_repository_get_page_empty_storage(tmp_path: Path) -> None:
++    repo = JsonCustomerRepository(tmp_path / "customers.json")
++    assert repo.get_page(limit=2, offset=1) == []
++
++
++# AC-18: corrupted storage raises the domain exception and leaves the file unchanged
++def test_repository_get_page_raises_on_corrupted_storage(tmp_path: Path) -> None:
++    db_file = tmp_path / "customers.json"
++    repo = JsonCustomerRepository(db_file)
++    db_file.write_bytes(b"{not valid json")
++    original_content = db_file.read_bytes()
++
++    with pytest.raises(StorageCorruptedError):
++        repo.get_page(limit=2, offset=1)
++
++    assert db_file.read_bytes() == original_content
