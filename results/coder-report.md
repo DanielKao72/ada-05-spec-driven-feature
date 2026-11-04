@@ -84,3 +84,56 @@ The warning is a `StarletteDeprecationWarning` from `fastapi/testclient.py`. It 
 [x] Ready for independent review
 
 This report is NOT an approval.
+
+## Fix Cycle
+Source of the assigned findings: `results/human-review-decisions.md`.
+
+The plan was approved by the human before any file was edited. No production code changed. The sections above describe the original implementation and were left as written. This section supersedes two of their Known Limitations: "No test locks this behavior in" and the `README.md` project tree omissions.
+
+### Findings Addressed
+| Finding | Decision | Action taken |
+|---|---|---|
+| RF-01 | MODIFIED, SHOULD FIX | Added API tests that pin the current integer parsing, using the human's interpretation of "non-integer" as a value that Pydantic's integer parsing rejects. |
+| RF-02 (coder part) | MODIFIED, OPTIONAL | Added the two missing test files to the `README.md` project tree and updated the scenario range in the NFR-03 row of `docs/tracebility.md`. |
+| RF-04 | ACCEPTED, OPTIONAL | Added one API test comparing a paginated response to the matching slice of the full listing, and one requesting `limit=100` over 101 stored records. |
+
+Not acted on, as instructed: RF-03, the open items, and the human part of RF-02.
+
+### Files Changed
+| File | Change |
+|---|---|
+| `tests/test_customer_pagination_api.py` | Added four test functions (15 test cases). Existing tests were not edited. |
+| `README.md` | Added `test_customer_pagination_api.py` and `test_corrupted_storage.py` to the project tree. |
+| `docs/tracebility.md` | NFR-03 row: changed `TS-01..TS-10` to `TS-01..TS-10, TS-17..TS-20`, and the test count from 69 to 84. |
+| `results/coder-report.md` | This section. |
+
+- The scenario range is not written as `TS-01..TS-20` because `SPEC.md` defines no TS-11 to TS-16.
+- The test count change goes beyond the wording of RF-02. The human approved it during planning, because the new tests would otherwise have made the row out of date.
+
+### Tests Added
+15 test cases were added, counting each parametrized case. The suite went from 69 to 84 passing tests. All of them passed on their first run against the unchanged production code.
+
+| Finding | Criterion | Test | Cases |
+|---|---|---|---|
+| RF-01 | AC-17, TS-19 | `test_ac17_lax_integer_forms_return_200_with_expected_records` (`limit=2.0`, `offset=1.0`, `limit=1_0`, `offset=1_0`, `limit=+5`, `limit=%205`, `limit=5%20`) | 7 |
+| RF-01 | AC-17, TS-19 | `test_ac17_rejected_integer_forms_return_422` (`limit=1.5`, `limit=abc`, `limit=true`, empty `limit`, `limit=1e1`, `limit=0x10`) | 6 |
+| RF-04 | AC-13, FR-09 | `test_ac13_paginated_response_matches_full_listing_slice` | 1 |
+| RF-04 | AC-17, TS-19 | `test_ac17_limit_100_over_101_records` | 1 |
+
+- `limit=abc` and `limit=1.5` are also in the existing `test_ac17_invalid_parameters_return_422`. They are repeated because the decision lists them, and the existing test was left unchanged.
+- Queries are sent in the raw URL. `limit=+5` reaches the server with `+` decoded as a space, so it pins the same parsing path as `limit=%205`, not a literal plus sign.
+
+### Commands Executed
+| Command | Result |
+|---|---|
+| `python -m pytest -q tests/test_customer_pagination_api.py` | 36 passed, 1 warning |
+| `bash scripts/verify_repo.sh` | 84 passed, 1 warning; `REPO_CONTRACT: PASS`; `VERIFY_REPO: PASS`; exit code 0 |
+| `git status --short`, `git diff --name-only`, `git diff --stat`, `git rev-parse HEAD` | Read-only check. Changed files were `README.md`, `docs/tracebility.md` and `tests/test_customer_pagination_api.py`; HEAD was `3c1d004baa28bc446820b559625768d2151257c6` |
+| Inline `python -B -c` probe of `/p?limit=+5`, using a throwaway in-memory app, run after verification | The raw query is `limit=+5` and the decoded value is `' 5'`; no repository files changed |
+
+The warning is the same `StarletteDeprecationWarning` recorded above.
+
+### Verification Result
+`bash scripts/verify_repo.sh` ended with `VERIFY_REPO: PASS`. It ran on HEAD `3c1d004` with the three changed files above uncommitted, before this section was written. It was not run again afterwards, as instructed, because the repository contract fails while `results/` has uncommitted changes.
+
+This Fix Cycle section is NOT an approval. The findings stay open until the human decides on them.
