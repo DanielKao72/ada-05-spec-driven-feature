@@ -231,9 +231,14 @@ If the JSON storage file contains invalid JSON, `GET /api/v1/customers`, `GET /a
 ---
 
 ### 4. List All Customers
-Retrieves all customer records currently persisted in the JSON store.
+Retrieves customer records from the JSON store in storage order. Without query parameters, it returns all of them.
 
 - **Endpoint:** `GET /api/v1/customers`
+- **Query Parameters:**
+  - `limit` (optional, integer from 1 to 100): maximum number of records to return. When omitted, no upper bound is applied.
+  - `offset` (optional, integer of 0 or greater, default `0`): number of records to skip.
+
+#### List All Customers:
 - **Request:**
   ```bash
   curl -X GET http://127.0.0.1:8000/api/v1/customers
@@ -248,4 +253,55 @@ Retrieves all customer records currently persisted in the JSON store.
       "created_at": "2026-09-23T23:40:00.000000+00:00"
     }
   ]
+  ```
+
+#### List a Page of Customers:
+Skips the first `offset` records and returns at most `limit` of the remaining ones. The response is the same JSON array, without a total count.
+
+- **Request:**
+  ```bash
+  curl -X GET "http://127.0.0.1:8000/api/v1/customers?limit=1&offset=1"
+  ```
+- **Response (HTTP 200 OK):**
+  ```json
+  [
+    {
+      "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "name": "Jane Doe",
+      "email": "jane.doe@example.com",
+      "created_at": "2026-09-23T23:45:00.000000+00:00"
+    }
+  ]
+  ```
+
+#### Offset Beyond the Total:
+- **Request:**
+  ```bash
+  curl -X GET "http://127.0.0.1:8000/api/v1/customers?offset=1000"
+  ```
+- **Response (HTTP 200 OK):**
+  ```json
+  []
+  ```
+
+#### Validation Error (Parameter out of range):
+A `limit` outside 1 to 100, a negative `offset`, or a non-integer value for either parameter is rejected.
+
+- **Request:**
+  ```bash
+  curl -X GET "http://127.0.0.1:8000/api/v1/customers?limit=101"
+  ```
+- **Response (HTTP 422 Unprocessable Entity):**
+  ```json
+  {
+    "detail": [
+      {
+        "type": "less_than_equal",
+        "loc": ["query", "limit"],
+        "msg": "Input should be less than or equal to 100",
+        "input": "101",
+        "ctx": {"le": 100}
+      }
+    ]
+  }
   ```

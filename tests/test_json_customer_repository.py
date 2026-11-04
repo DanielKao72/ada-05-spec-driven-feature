@@ -1,6 +1,7 @@
 from pathlib import Path
 import pytest
 
+from app.core.exceptions import StorageCorruptedError
 from app.repositories.json_customer_repository import JsonCustomerRepository
 from app.schemas.customer import Customer
 
@@ -67,3 +68,67 @@ def test_repository_search_partial_and_case_insensitive(tmp_path: Path) -> None:
 
     # Non-matching search
     assert repo.search("nonexistent") == []
+
+
+def _repo_with_customers(tmp_path: Path, count: int) -> tuple[JsonCustomerRepository, list[Customer]]:
+    repo = JsonCustomerRepository(tmp_path / "customers.json")
+    customers = [
+        Customer(name=f"Customer {number}", email=f"customer{number}@example.com")
+        for number in range(1, count + 1)
+    ]
+    for customer in customers:
+        repo.save(customer)
+    return repo, customers
+
+
+# AC-13: limit and offset together select the window in storage order
+def test_repository_get_page_window(tmp_path: Path) -> None:
+    repo, customers = _repo_with_customers(tmp_path, 5)
+    assert repo.get_page(limit=2, offset=1) == customers[1:3]
+
+
+# AC-15: limit alone returns the first records; a limit past the end returns what remains
+def test_repository_get_page_limit_only(tmp_path: Path) -> None:
+    repo, customers = _repo_with_customers(tmp_path, 5)
+    assert repo.get_page(limit=2) == customers[:2]
+    assert repo.get_page(limit=100) == customers
+
+
+# AC-15: offset alone returns the remaining records
+def test_repository_get_page_offset_only(tmp_path: Path) -> None:
+    repo, customers = _repo_with_customers(tmp_path, 5)
+    assert repo.get_page(offset=3) == customers[3:]
+
+
+# AC-14: without arguments the page is the full collection
+def test_repository_get_page_defaults_match_get_all(tmp_path: Path) -> None:
+    repo, customers = _repo_with_customers(tmp_path, 5)
+    assert repo.get_page() == customers
+    assert repo.get_page() == repo.get_all()
+
+
+# AC-16: an offset equal to or greater than the total returns an empty list
+@pytest.mark.parametrize("offset", [5, 6])
+def test_repository_get_page_offset_beyond_total(tmp_path: Path, offset: int) -> None:
+    repo, _ = _repo_with_customers(tmp_path, 5)
+    assert repo.get_page(limit=2, offset=offset) == []
+    assert repo.get_page(offset=offset) == []
+
+
+# FR-09: empty storage yields an empty page
+def test_repository_get_page_empty_storage(tmp_path: Path) -> None:
+    repo = JsonCustomerRepository(tmp_path / "customers.json")
+    assert repo.get_page(limit=2, offset=1) == []
+
+
+# AC-18: corrupted storage raises the domain exception and leaves the file unchanged
+def test_repository_get_page_raises_on_corrupted_storage(tmp_path: Path) -> None:
+    db_file = tmp_path / "customers.json"
+    repo = JsonCustomerRepository(db_file)
+    db_file.write_bytes(b"{not valid json")
+    original_content = db_file.read_bytes()
+
+    with pytest.raises(StorageCorruptedError):
+        repo.get_page(limit=2, offset=1)
+
+    assert db_file.read_bytes() == original_content

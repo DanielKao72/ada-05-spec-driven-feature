@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.exceptions import CustomerAlreadyExistsError
@@ -64,10 +64,24 @@ def create_customer(
     "",
     response_model=List[CustomerResponse],
     status_code=status.HTTP_200_OK,
-    summary="List all customers",
-    description="Retrieves the complete collection of registered customers.",
+    summary="List customers",
+    description=(
+        "Retrieves registered customers in storage order. Without `limit` and `offset`, "
+        "returns the complete collection."
+    ),
 )
 def get_all_customers(
+    limit: Optional[int] = Query(
+        None,
+        ge=1,
+        le=100,
+        description="Maximum number of customers to return (1 to 100). When omitted, no upper bound is applied.",
+    ),
+    offset: int = Query(
+        0,
+        ge=0,
+        description="Number of customers to skip from the start of the collection.",
+    ),
     service: CustomerService = Depends(get_customer_service),
 ) -> List[CustomerResponse]:
-    return service.get_all_customers()
+    return service.get_all_customers(limit=limit, offset=offset)
