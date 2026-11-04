@@ -29,7 +29,7 @@ Answers "where is what I need?". Layer rules come from `ARCHITECTURE.md`.
 | `tests/test_customer_service.py` | Service unit tests. |
 | `tests/test_customer_api_validation.py` | API status codes and validation errors. |
 | `tests/test_customer_search_api.py` | Acceptance scenarios AC-01..AC-07 / TS-01..TS-10. |
-| tests/test_customer_pagination_api.py (planned, CR-002) | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
+| `tests/test_customer_pagination_api.py` | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
 
 Tests must never read or write `data/customers.json`; always use `tmp_path`.
 
