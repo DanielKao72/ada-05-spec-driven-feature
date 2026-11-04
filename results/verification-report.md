@@ -15,16 +15,17 @@ CR-002
     * httpx: 0.28.1
     * uvicorn: 0.49.0
 
-* **Commit reviewed:** 3e21ffc6ec5e52c4846d2468bbeba8f226da4554
+* **Commit reviewed:** 83e4c36d33a2d1c78c06ed4cae9545a5e8d706d7
 
 ## Checks
 
 | Check | Command | Result | Evidence |
 |---|---|---|---|
-| Tests | python -m pytest -q | PASS | ![Test Evidence](../images/test_evidence.png) |
+| Tests | bash scripts/verify_repo.sh | PASS | 84 passed, see results/verification-output.txt |
 | Lint | Not configured | - | - |
-| Repo contract | bash scripts/verify_repo.sh | PASS | ![Repo Contract Evidence](../images/repo_contract_evidence.png) |
+| Repo contract | bash scripts/verify_repo.sh | PASS | REPO_CONTRACT: PASS, see results/verification-output.txt |
 | Security | Not configured | - | - |
+
 
 ## Overall Gate
 

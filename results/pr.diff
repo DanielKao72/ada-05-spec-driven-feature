@@ -1,8 +1,19 @@
 diff --git a/README.md b/README.md
-index 5c0f642..ab477c4 100644
+index 5c0f642..e0a4255 100644
 --- a/README.md
 +++ b/README.md
-@@ -231,9 +231,14 @@ If the JSON storage file contains invalid JSON, `GET /api/v1/customers`, `GET /a
+@@ -40,7 +40,9 @@ ada-05-spec-driven-feature/
+ │   ├── test_json_customer_repository.py# Unit tests for repository layer
+ │   ├── test_customer_service.py        # Unit tests for service layer
+ │   ├── test_customer_api_validation.py # Integration tests for status codes & errors
+-│   └── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
++│   ├── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
++│   ├── test_customer_pagination_api.py # End-to-end acceptance tests for list pagination
++│   └── test_corrupted_storage.py       # Corrupted JSON storage handling tests
+ ├── requirements.txt                    # Project dependencies
+ ├── REQUIREMENTS.md                     # Functional & non-functional requirements
+ ├── SPEC.md                             # Feature specification & acceptance criteria
+@@ -231,9 +233,14 @@ If the JSON storage file contains invalid JSON, `GET /api/v1/customers`, `GET /a
  ---
  
  ### 4. List All Customers
@@ -18,7 +29,7 @@ index 5c0f642..ab477c4 100644
  - **Request:**
    ```bash
    curl -X GET http://127.0.0.1:8000/api/v1/customers
-@@ -249,3 +254,54 @@ Retrieves all customer records currently persisted in the JSON store.
+@@ -249,3 +256,54 @@ Retrieves all customer records currently persisted in the JSON store.
      }
    ]
    ```
@@ -152,8 +163,21 @@ index 98557dd..7b263ea 100644
 +        """Retrieves registered customers, delegating the pagination window to the repository."""
 +        customers = self.repository.get_page(limit=limit, offset=offset)
 +        return [CustomerResponse.model_validate(c) for c in customers]
+diff --git a/docs/REPO_MAP.md b/docs/REPO_MAP.md
+index a74d744..be95cd2 100644
+--- a/docs/REPO_MAP.md
++++ b/docs/REPO_MAP.md
+@@ -29,7 +29,7 @@ Answers "where is what I need?". Layer rules come from `ARCHITECTURE.md`.
+ | `tests/test_customer_service.py` | Service unit tests. |
+ | `tests/test_customer_api_validation.py` | API status codes and validation errors. |
+ | `tests/test_customer_search_api.py` | Acceptance scenarios AC-01..AC-07 / TS-01..TS-10. |
+-| tests/test_customer_pagination_api.py (planned, CR-002) | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
++| `tests/test_customer_pagination_api.py` | Acceptance scenarios AC-13..AC-18 / TS-17..TS-20. |
+ 
+ Tests must never read or write `data/customers.json`; always use `tmp_path`.
+ 
 diff --git a/docs/tracebility.md b/docs/tracebility.md
-index e423283..fe7123c 100644
+index e423283..98f0af6 100644
 --- a/docs/tracebility.md
 +++ b/docs/tracebility.md
 @@ -7,10 +7,12 @@
@@ -166,145 +190,18 @@ index e423283..fe7123c 100644
  | **NFR-01** | Modelo de Dominio, TS-10 | T-01, T-03, T-05 | `app/core/config.py`, `app/repositories/json_customer_repository.py`, `data/customers.json` | `test_repository_creates_missing_file`, `test_repository_save_and_retrieve` | **Implementado correctamente** | Persistencia de los datos en un archivo JSON local. Se inicializa al ejecutar la app. |
  | **NFR-02** | Arquitectura, Alcance | T-01, T-03, T-04, T-05 | `app/dependencies.py`, `app/routers/customer_router.py`, `app/services/customer_service.py`, `app/repositories/json_customer_repository.py` | `tests/conftest.py` (override de dependencias con `get_customer_repository`) | **Implementado correctamente** | Se diseñó la app siguiendo una arquitectura de capas (Router $\rightarrow$ Service $\rightarrow$ Repository). |
 -| **NFR-03** | Estrategia de Pruebas, TS-01..TS-10 | T-01, T-05 | `requirements.txt`, `tests/conftest.py`, `tests/test_*.py` | Suite completa de pruebas (`pytest -v`, 36 pruebas) | **Implementado correctamente** | |
-+| **NFR-03** | Estrategia de Pruebas, TS-01..TS-10 | T-01, T-05 | `requirements.txt`, `tests/conftest.py`, `tests/test_*.py` | Suite completa de pruebas (`pytest -v`, 69 pruebas) | **Implementado correctamente** | |
++| **NFR-03** | Estrategia de Pruebas, TS-01..TS-10, TS-17..TS-20 | T-01, T-05 | `requirements.txt`, `tests/conftest.py`, `tests/test_*.py` | Suite completa de pruebas (`pytest -v`, 84 pruebas) | **Implementado correctamente** | |
  | **CR-001** (NFR-01, FR-05, FR-06) | SPEC › Error Handling (HTTP 500), CR-001-AC-01..AC-05 | CR-001 | `app/core/exceptions.py`, `app/repositories/json_customer_repository.py`, `app/main.py`, `tests/test_corrupted_storage.py` | `test_list_customers_with_corrupted_storage_returns_500`, `test_search_customers_with_corrupted_storage_returns_500`, `test_create_customer_with_corrupted_storage_does_not_overwrite_file`, `test_corrupted_storage_emits_error_log`, `test_repository_raises_on_corrupted_storage`, `test_empty_storage_file_is_treated_as_empty_list`, `test_missing_storage_file_is_initialized` | **Implementado correctamente** | Un JSON corrupto ya no se trata como `[]`: el repositorio registra un error (ruta + fallo de decodificación) y lanza `StorageCorruptedError`; la API responde HTTP 500 y el archivo no se sobrescribe. |
 +| **CR-002** (FR-09, FR-06) | AC-07, AC-13..AC-18 | T-08 | `app/routers/customer_router.py`, `app/services/customer_service.py`, `app/repositories/json_customer_repository.py`, `tests/test_customer_pagination_api.py`, `tests/test_customer_service.py`, `tests/test_json_customer_repository.py`, `README.md` | `tests/test_customer_pagination_api.py`, `test_ts09_list_all_customers`, `test_list_customers_with_corrupted_storage_returns_500` | **Implementado, pendiente de revisión** | Paginación opcional de `GET /api/v1/customers`. `GET /api/v1/customers/search` y `POST /api/v1/customers` no cambian. |
  
  ---
 \ No newline at end of file
-diff --git a/results/coder-report.md b/results/coder-report.md
-new file mode 100644
-index 0000000..a1d9775
---- /dev/null
-+++ b/results/coder-report.md
-@@ -0,0 +1,86 @@
-+# Coder Agent Report
-+
-+## Change
-+Change ID: CR-002
-+Branch: ada09/cr-002
-+Base commit: 31be625
-+
-+## Requirements Covered
-+- FR-09 (Customer List Pagination)
-+- FR-06 (List All Customers: behavior preserved when parameters are omitted)
-+- AC-07, AC-13, AC-14, AC-15, AC-16, AC-17, AC-18
-+
-+## Implementation Plan
-+The plan was approved by the human before any file was edited. It follows the pagination responsibilities in `ARCHITECTURE.md`:
-+1. Router: bind and validate `limit` (optional, 1 to 100) and `offset` (default 0, minimum 0).
-+2. Service: delegate both parameters to the repository, with no slicing.
-+3. Repository: add `get_page(limit, offset)`, which calls `get_all()` and slices the result.
-+4. Tests: add API, repository and service tests.
-+5. Docs: update `README.md` and `docs/tracebility.md`.
-+
-+## Files Changed
-+| File | Change |
-+|---|---|
-+| `app/routers/customer_router.py` | Added the `limit` and `offset` query parameters to `GET /api/v1/customers`; updated the summary and description. |
-+| `app/services/customer_service.py` | `get_all_customers(limit=None, offset=0)` now delegates to `repository.get_page`. |
-+| `app/repositories/json_customer_repository.py` | Added `get_page`. |
-+| `tests/test_customer_pagination_api.py` | New file with API acceptance tests. |
-+| `tests/test_json_customer_repository.py` | Added repository tests and one import. |
-+| `tests/test_customer_service.py` | Added service tests and extended one import. |
-+| `README.md` | Section 4 documents the parameters, a paginated example, an offset beyond the total, and a 422 response. |
-+| `docs/tracebility.md` | Added FR-09 and CR-002 rows, added a regression note to FR-06, and changed the NFR-03 test count from 36 to 69. |
-+| `results/coder-report.md` | This report. |
-+
-+## Tests Added / Updated
-+33 test cases were added, counting each parametrized case: 21 API, 8 repository and 4 service. No existing test was edited or removed. The suite went from 36 to 69 passing tests.
-+
-+| Criterion | Tests |
-+|---|---|
-+| AC-13 | `test_ac13_paginated_window`, `test_repository_get_page_window`, `test_service_get_all_customers_returns_window` |
-+| AC-14 | `test_ac14_listing_without_parameters_returns_all`, `test_ac14_listing_without_parameters_has_no_implicit_cap`, `test_repository_get_page_defaults_match_get_all`, `test_service_get_all_customers_defaults_return_all` |
-+| AC-15 | `test_ac15_limit_only`, `test_ac15_offset_only`, `test_repository_get_page_limit_only`, `test_repository_get_page_offset_only` |
-+| AC-16 | `test_ac16_offset_beyond_total_returns_empty_list`, `test_repository_get_page_offset_beyond_total` |
-+| AC-17 | `test_ac17_invalid_parameters_return_422`, `test_ac17_boundary_parameters_return_200` |
-+| AC-18 | `test_ac18_pagination_with_corrupted_storage_returns_500`, `test_repository_get_page_raises_on_corrupted_storage` |
-+| AC-07 (regression) | Existing `test_ts09_list_all_customers` (unchanged), plus the AC-14 API tests |
-+| FR-09 (layer responsibilities) | `test_service_delegates_pagination_to_repository`, `test_repository_get_page_empty_storage` |
-+| CR-002 constraint (search not paginated) | `test_search_ignores_pagination_parameters` |
-+
-+## Commands Executed
-+| Command | Result |
-+|---|---|
-+| `git log --oneline -3`, `git show --stat --format=%s HEAD`, `git ls-files results tests/test_customer_pagination_api.py` | Read-only inspection before the change |
-+| `python -m pytest -q` (before the change) | 36 passed, 1 warning |
-+| Inline `python -c` probe of FastAPI integer parsing, using a throwaway in-memory app | See Known Limitations; no files changed |
-+| `python -m pytest -q` (after the change) | 69 passed, 1 warning |
-+| Inline Python request for `GET /api/v1/customers?limit=101` against a temporary repository | 422; the body matches the `README.md` example |
-+| `bash scripts/verify_repo.sh` | 69 passed, 1 warning; `REPO_CONTRACT: PASS`; `VERIFY_REPO: PASS`; exit code 0 |
-+| `git status --short`, `git diff --stat` | Read-only check of changed files |
-+
-+The warning is a `StarletteDeprecationWarning` from `fastapi/testclient.py`. It was already present before this change.
-+
-+## Verification Result
-+`bash scripts/verify_repo.sh` ended with `VERIFY_REPO: PASS`. It ran before this report was created and was not run again afterwards, as instructed, because the repository contract fails while `results/` has uncommitted changes.
-+
-+## Assumptions
-+- The base commit is recorded as `31be625`, as the human specified. The working tree's HEAD is `1e1dffb`, which only adds `results/run-context.md`.
-+- The FR-09 and CR-002 rows in `docs/tracebility.md` use the status "Implementado, pendiente de revisión" because independent review has not happened yet.
-+- Updating the stale NFR-03 test count falls under the rule to update `docs/tracebility.md` when a change affects a requirement.
-+- `limit` and `offset` use the plain `int` binding, because `ARCHITECTURE.md` assigns this validation to FastAPI and Pydantic.
-+
-+## Known Limitations
-+- **Lenient integer parsing (AC-17 edge, for the reviewer and human to assess).** `abc`, `1.5`, `true` and empty values return 422. Pydantic coerces `limit=2.0`, `offset=1.0`, `limit=1_0`, `limit=+5` and a space-padded `limit=%205` to integers, so these return 200. `SPEC.md` does not settle whether these forms count as non-integer values. The human saw this in the plan and approved the plain binding. No test locks this behavior in.
-+- `get_page` does not reject a negative `offset` or non-positive `limit`; those bounds are enforced only in the router, as `ARCHITECTURE.md` assigns. A direct caller passing a negative `offset` would get Python's slice-from-the-end behavior.
-+- `get_page` reads and validates the whole JSON file on each request, in line with assumption A-01 in `REQUIREMENTS.md`.
-+- Behavior was verified through `TestClient`. No live Uvicorn server was started.
-+- Stale documentation was left as is:
-+  - `docs/REPO_MAP.md` still marks `tests/test_customer_pagination_api.py` as "planned, CR-002", but that file is closed for this change.
-+  - The `README.md` project tree does not list the new test file. It already omitted `test_corrupted_storage.py`.
-+
-+## Self-Check
-+[x] Scope respected
-+[x] Existing tests not weakened
-+[x] No undocumented dependency/API introduced
-+[x] Ready for independent review
-+
-+This report is NOT an approval.
-diff --git a/results/run-context.md b/results/run-context.md
-new file mode 100644
-index 0000000..c30b964
---- /dev/null
-+++ b/results/run-context.md
-@@ -0,0 +1,29 @@
-+# Run Context
-+
-+## Change
-+Change ID: CR-002
-+Branch: ada09/cr-002
-+Pull request target: ada08-after
-+
-+## Commits
-+Branch base: fe80603 (ada08-after)
-+Spec commit: 31be625 (approved requirements, specification and agent documents)
-+
-+Human Gate 0: approved by Juan Daniel Kao Pech on 03/11/2026 (see CHANGE_REQUEST.md).
-+
-+## Environment
-+Python: 3.11.0
-+fastapi: 0.138.1
-+pydantic: 2.14.1
-+pytest: 9.1.1
-+httpx: 0.28.1
-+uvicorn: 0.49.0
-+
-+## Initial Verification
-+Commit verified: 31be625
-+Command: bash scripts/verify_repo.sh
-+Tests: 36 passed, 1 warning
-+Repository contract: PASS
-+Result: VERIFY_REPO: PASS
-+
-+Lint and security checks are not configured in this repository.
 diff --git a/tests/test_customer_pagination_api.py b/tests/test_customer_pagination_api.py
 new file mode 100644
-index 0000000..5839dc3
+index 0000000..ebd8542
 --- /dev/null
 +++ b/tests/test_customer_pagination_api.py
-@@ -0,0 +1,146 @@
+@@ -0,0 +1,219 @@
 +from pathlib import Path
 +from typing import List
 +
@@ -425,6 +322,79 @@ index 0000000..5839dc3
 +    response = client.get(f"{CUSTOMERS_URL}?{query}")
 +
 +    assert response.status_code == 200
++
++
++# AC-17 / TS-19: "non-integer" means a value Pydantic's integer parsing rejects
++# (results/human-review-decisions.md, RF-01), so these forms are accepted.
++# Queries stay in the raw URL: `params=` would encode "+" as %2B and send a different input.
++@pytest.mark.parametrize(
++    ("query", "expected_slice"),
++    [
++        ("limit=2.0", slice(2)),
++        ("offset=1.0", slice(1, None)),
++        ("limit=1_0", slice(10)),
++        ("offset=1_0", slice(10, None)),
++        ("limit=+5", slice(5)),
++        ("limit=%205", slice(5)),
++        ("limit=5%20", slice(5)),
++    ],
++)
++def test_ac17_lax_integer_forms_return_200_with_expected_records(
++    client: TestClient, test_repo: JsonCustomerRepository, query: str, expected_slice: slice
++) -> None:
++    emails = seed_customers(test_repo, 15)
++
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails[expected_slice]
++
++
++# AC-17 / TS-19: forms that Pydantic's integer parsing rejects return 422 (RF-01)
++@pytest.mark.parametrize(
++    "query",
++    [
++        "limit=1.5",
++        "limit=abc",
++        "limit=true",
++        "limit=",
++        "limit=1e1",
++        "limit=0x10",
++    ],
++)
++def test_ac17_rejected_integer_forms_return_422(client: TestClient, query: str) -> None:
++    response = client.get(f"{CUSTOMERS_URL}?{query}")
++
++    assert response.status_code == 422
++
++
++# AC-13 / FR-09: a paginated response has the same format as the matching slice of the full listing
++def test_ac13_paginated_response_matches_full_listing_slice(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    seed_customers(test_repo, 5)
++    full_listing = client.get(CUSTOMERS_URL).json()
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=2&offset=1")
++
++    assert response.status_code == 200
++    page = response.json()
++    assert len(page) == 2
++    assert page == full_listing[1:3]
++    for customer in page:
++        assert set(customer) == {"id", "name", "email", "created_at"}
++
++
++# AC-17 / TS-19: limit=100 is applied as the upper limit when more records are stored
++def test_ac17_limit_100_over_101_records(
++    client: TestClient, test_repo: JsonCustomerRepository
++) -> None:
++    emails = seed_customers(test_repo, 101)
++
++    response = client.get(f"{CUSTOMERS_URL}?limit=100")
++
++    assert response.status_code == 200
++    assert emails_in(response) == emails[:100]
 +
 +
 +# AC-18 / TS-20: a paginated request over invalid JSON returns 500 and leaves the file unchanged
