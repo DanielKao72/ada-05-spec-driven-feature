@@ -1,0 +1,3 @@
+3e21ffc feat: :sparkles: implement CR-002
+1e1dffb docs: record ADA-09 run context for CR-002
+31be625 docs: define and approve CR-002 customer list pagination
