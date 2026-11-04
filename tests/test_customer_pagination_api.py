@@ -120,6 +120,79 @@ def test_ac17_boundary_parameters_return_200(client: TestClient, query: str) -> 
     assert response.status_code == 200
 
 
+# AC-17 / TS-19: "non-integer" means a value Pydantic's integer parsing rejects
+# (results/human-review-decisions.md, RF-01), so these forms are accepted.
+# Queries stay in the raw URL: `params=` would encode "+" as %2B and send a different input.
+@pytest.mark.parametrize(
+    ("query", "expected_slice"),
+    [
+        ("limit=2.0", slice(2)),
+        ("offset=1.0", slice(1, None)),
+        ("limit=1_0", slice(10)),
+        ("offset=1_0", slice(10, None)),
+        ("limit=+5", slice(5)),
+        ("limit=%205", slice(5)),
+        ("limit=5%20", slice(5)),
+    ],
+)
+def test_ac17_lax_integer_forms_return_200_with_expected_records(
+    client: TestClient, test_repo: JsonCustomerRepository, query: str, expected_slice: slice
+) -> None:
+    emails = seed_customers(test_repo, 15)
+
+    response = client.get(f"{CUSTOMERS_URL}?{query}")
+
+    assert response.status_code == 200
+    assert emails_in(response) == emails[expected_slice]
+
+
+# AC-17 / TS-19: forms that Pydantic's integer parsing rejects return 422 (RF-01)
+@pytest.mark.parametrize(
+    "query",
+    [
+        "limit=1.5",
+        "limit=abc",
+        "limit=true",
+        "limit=",
+        "limit=1e1",
+        "limit=0x10",
+    ],
+)
+def test_ac17_rejected_integer_forms_return_422(client: TestClient, query: str) -> None:
+    response = client.get(f"{CUSTOMERS_URL}?{query}")
+
+    assert response.status_code == 422
+
+
+# AC-13 / FR-09: a paginated response has the same format as the matching slice of the full listing
+def test_ac13_paginated_response_matches_full_listing_slice(
+    client: TestClient, test_repo: JsonCustomerRepository
+) -> None:
+    seed_customers(test_repo, 5)
+    full_listing = client.get(CUSTOMERS_URL).json()
+
+    response = client.get(f"{CUSTOMERS_URL}?limit=2&offset=1")
+
+    assert response.status_code == 200
+    page = response.json()
+    assert len(page) == 2
+    assert page == full_listing[1:3]
+    for customer in page:
+        assert set(customer) == {"id", "name", "email", "created_at"}
+
+
+# AC-17 / TS-19: limit=100 is applied as the upper limit when more records are stored
+def test_ac17_limit_100_over_101_records(
+    client: TestClient, test_repo: JsonCustomerRepository
+) -> None:
+    emails = seed_customers(test_repo, 101)
+
+    response = client.get(f"{CUSTOMERS_URL}?limit=100")
+
+    assert response.status_code == 200
+    assert emails_in(response) == emails[:100]
+
+
 # AC-18 / TS-20: a paginated request over invalid JSON returns 500 and leaves the file unchanged
 def test_ac18_pagination_with_corrupted_storage_returns_500(
     client: TestClient, test_repo: JsonCustomerRepository

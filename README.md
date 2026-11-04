@@ -40,7 +40,9 @@ ada-05-spec-driven-feature/
 │   ├── test_json_customer_repository.py# Unit tests for repository layer
 │   ├── test_customer_service.py        # Unit tests for service layer
 │   ├── test_customer_api_validation.py # Integration tests for status codes & errors
-│   └── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
+│   ├── test_customer_search_api.py     # End-to-end acceptance & search scenario tests
+│   ├── test_customer_pagination_api.py # End-to-end acceptance tests for list pagination
+│   └── test_corrupted_storage.py       # Corrupted JSON storage handling tests
 ├── requirements.txt                    # Project dependencies
 ├── REQUIREMENTS.md                     # Functional & non-functional requirements
 ├── SPEC.md                             # Feature specification & acceptance criteria
